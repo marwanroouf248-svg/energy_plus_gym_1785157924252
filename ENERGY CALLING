@@ -1,0 +1,389 @@
+import { NextResponse } from "next/server";
+import fs from "fs/promises";
+import path from "path";
+import * as XLSX from "xlsx";
+
+export const runtime = "nodejs";
+
+const DATA_DIR = path.join(process.cwd(), "data");
+const CONTACTS_FILE = path.join(DATA_DIR, "contacts.json");
+const META_FILE = path.join(DATA_DIR, "recordings.json");
+const PUBLIC_RECORDINGS = path.join(process.cwd(), "public", "recordings");
+
+async function ensureDirs() {
+  await fs.mkdir(PUBLIC_RECORDINGS, { recursive: true });
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  try { await fs.access(CONTACTS_FILE); } catch { await fs.writeFile(CONTACTS_FILE, "[]", "utf8"); }
+  try { await fs.access(META_FILE); } catch { await fs.writeFile(META_FILE, "[]", "utf8"); }
+}
+
+async function readJSON(file: string) {
+  try { const raw = await fs.readFile(file, "utf8"); return JSON.parse(raw || "[]"); }
+  catch { return []; }
+}
+async function writeJSON(file: string, data: any) {
+  await fs.writeFile(file, JSON.stringify(data, null, 2), "utf8");
+}
+
+function normalizePhone(phone: string) {
+  if (!phone) return "";
+  return phone.toString().replace(/\D/g, "");
+}
+
+function detectColumns(obj: Record<string, any>) {
+  const keys = Object.keys(obj);
+  let nameKey: string | null = null;
+  let phoneKey: string | null = null;
+  let urlKey: string | null = null;
+  let callIdKey: string | null = null;
+  for (const k of keys) {
+    const n = k.toLowerCase();
+    if (!nameKey && /name|client|contact|الاسم|العميل/.test(n)) nameKey = k;
+    if (!phoneKey && /phone|mobile|tel|number|رقم|الهاتف/.test(n)) phoneKey = k;
+    if (!urlKey && /recordingurl|recordurl|audio|url|link/.test(n)) urlKey = k;
+    if (!callIdKey && /callid|call_id|id/.test(n)) callIdKey = k;
+  }
+  return { nameKey, phoneKey, urlKey, callIdKey };
+}
+
+async function downloadRecording(recordingUrl: string, targetName: string) {
+  try {
+    let fetched: Response | null = null;
+    try {
+      fetched = await fetch(recordingUrl + ".mp3");
+      if (!fetched.ok) fetched = await fetch(recordingUrl);
+    } catch (err) {
+      // try plain fetch once more
+      fetched = await fetch(recordingUrl);
+    }
+    if (!fetched || !fetched.ok) throw new Error(`download failed status=${fetched?.status}`);
+    const arrayBuffer = await fetched.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const contentType = fetched.headers.get("content-type") || "";
+    const ext = contentType.includes("wav") ? "wav" : contentType.includes("ogg") ? "ogg" : "mp3";
+    const filename = `${targetName}_${Date.now()}.${ext}`;
+    const filePath = path.join(PUBLIC_RECORDINGS, filename);
+    await fs.writeFile(filePath, buffer);
+    return { ok: true, filename, size: buffer.length, mime: contentType || null, url: `/recordings/${filename}` };
+  } catch (err: any) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    await ensureDirs();
+
+    const form = await request.formData();
+    const file = form.get("file") as File | null;
+    if (!file) return NextResponse.json({ error: "missing file field 'file'" }, { status: 400 });
+
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+    const contacts = await readJSON(CONTACTS_FILE);
+    const metaArr = await readJSON(META_FILE);
+    const byPhone = new Map(contacts.map((c: any) => [String(c.phone || ""), c]));
+
+    let createdContacts = 0;
+    let createdRecordings = 0;
+    let downloadFailures = 0;
+    const errors: string[] = [];
+
+    for (const row of rows) {
+      const { nameKey, phoneKey, urlKey, callIdKey } = detectColumns(row);
+      const rawPhone = phoneKey ? String(row[phoneKey] ?? "") : "";
+      const phone = normalizePhone(rawPhone);
+      const name = nameKey ? String(row[nameKey] ?? "").trim() : "";
+      const recordingUrl = urlKey ? String(row[urlKey] ?? "").trim() : "";
+      const callId = callIdKey ? String(row[callIdKey] ?? "").trim() : "";
+
+      if (!phone && !recordingUrl) {
+        // nothing useful in this row
+        continue;
+      }
+
+      // ensure contact
+      let contact = phone ? byPhone.get(phone) : null;
+      if (!contact && phone) {
+        contact = {
+          id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          name: name || null,
+          phone,
+          rawPhone: rawPhone || null,
+          createdAt: Date.now(),
+        };
+        contacts.push(contact);
+        byPhone.set(phone, contact);
+        createdContacts++;
+      } else if (contact && (!contact.name || contact.name === "") && name) {
+        contact.name = name;
+      }
+
+      // if there's a recording URL, try download and save
+      let savedMeta: any = null;
+      if (recordingUrl) {
+        const targetName = (callId || (contact ? contact.id : "record")) .replace(/\s+/g, "_");
+        const dl = await downloadRecording(recordingUrl, targetName);
+        if (dl.ok) {
+          savedMeta = {
+            id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            callId: callId || null,
+            contactId: contact ? contact.id : null,
+            contactName: contact ? contact.name : null,
+            filename: dl.filename,
+            url: dl.url,
+            size: dl.size,
+            mime: dl.mime,
+            downloaded: true,
+            createdAt: Date.now(),
+          };
+          metaArr.push(savedMeta);
+          createdRecordings++;
+        } else {
+          // record metadata without downloaded file (keep original URL)
+          savedMeta = {
+            id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            callId: callId || null,
+            contactId: contact ? contact.id : null,
+            contactName: contact ? contact.name : null,
+            filename: null,
+            url: recordingUrl,
+            size: null,
+            mime: null,
+            downloaded: false,
+            downloadError: dl.error,
+            createdAt: Date.now(),
+          };
+          metaArr.push(savedMeta);
+          downloadFailures++;
+          errors.push(`Row with phone=${phone || "n/a"}: download failed (${dl.error})`);
+        }
+      } else {
+        // no recording url — still add metadata entry if callId or phone exists
+        const meta = {
+          id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          callId: callId || null,
+          contactId: contact ? contact.id : null,
+          contactName: contact ? contact.name : null,
+          filename: null,
+          url: null,
+          size: null,
+          mime: null,
+          downloaded: false,
+          createdAt: Date.now(),
+        };
+        metaArr.push(meta);
+      }
+    }
+
+    // save updated contacts and metadata
+    await writeJSON(CONTACTS_FILE, contacts);
+    await writeJSON(META_FILE, metaArr);
+
+    return NextResponse.json({
+      ok: true,
+      summary: {
+        rowsProcessed: rows.length,
+        createdContacts,
+        createdRecordings,
+        downloadFailures,
+        errorsCount: errors.length,
+      },
+      errors: errors.slice(0, 20),
+    });
+  } catch (err) {
+    console.error("import recordings error:", err);
+    return NextResponse.json({ error: "internal error" }, { status: 500 });
+  }
+}"use client";
+import React, { useEffect, useState, useRef } from "react";
+
+type Contact = { id: string; name?: string; phone: string };
+type Recording = { id: string; filename: string; url: string; contactName?: string | null };
+
+export default function RecordingsAdmin() {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [recordings, setRecordings] = useState<Recording[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<BlobPart[]>([]);
+
+  async function fetchData() {
+    const [cRes, rRes] = await Promise.all([fetch("/api/contacts"), fetch("/api/recordings")]);
+    const cJson = await cRes.json();
+    const rJson = await rRes.json();
+    setContacts(cJson.contacts || []);
+    setRecordings(rJson.recordings || []);
+  }
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  async function onFileChangeContacts(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const res = await fetch("/api/contacts/upload", { method: "POST", body: fd });
+      const json = await res.json();
+      console.log("contacts upload result", json);
+      await fetchData();
+      alert(`تم رفع الملف، ${json.added || 0} جهات اتضافت`);
+    } catch (err) {
+      console.error(err);
+      alert("حدث خطأ أثناء رفع الملف");
+    } finally {
+      setUploading(false);
+      (e.target as HTMLInputElement).value = "";
+    }
+  }
+
+  async function onFileChangeImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!confirm("ستتم معالجة الملف واستيراد سجلات المكالمات. أكمل؟")) {
+      (e.target as HTMLInputElement).value = "";
+      return;
+    }
+    setUploading(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const res = await fetch("/api/recordings/import", { method: "POST", body: fd });
+      const json = await res.json();
+      console.log("import result", json);
+      await fetchData();
+      if (json.ok) {
+        alert(`استيراد مكتمل: rows=${json.summary.rowsProcessed}, createdContacts=${json.summary.createdContacts}, createdRecordings=${json.summary.createdRecordings}, downloadFailures=${json.summary.downloadFailures}`);
+      } else {
+        alert("حدث خطأ أثناء الاستيراد");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("حدث خطأ أثناء استيراد الملف");
+    } finally {
+      setUploading(false);
+      (e.target as HTMLInputElement).value = "";
+    }
+  }
+
+  // Recording controls (existing) ...
+  async function startRecording() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      alert("المتصفح لا يدعم تسجيل الصوت");
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const options: MediaRecorderOptions = { mimeType: "audio/webm" as any };
+      const mediaRecorder = new MediaRecorder(stream, options);
+      mediaRecorderRef.current = mediaRecorder;
+      recordedChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e: BlobEvent) => {
+        if (e.data && e.data.size > 0) {
+          recordedChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const blob = new Blob(recordedChunksRef.current, { type: "audio/webm" });
+        await uploadRecordingBlob(blob);
+        stream.getTracks().forEach((t) => t.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("start recording error", err);
+      alert("لم يتمكن المتصفح من الوصول للميكروفون");
+    }
+  }
+
+  function stopRecording() {
+    const mr = mediaRecorderRef.current;
+    if (mr && mr.state !== "inactive") {
+      mr.stop();
+    }
+    setIsRecording(false);
+  }
+
+  async function uploadRecordingBlob(blob: Blob) {
+    setUploading(true);
+    const fd = new FormData();
+    fd.append("recording", blob, `web_recording_${Date.now()}.webm`);
+    try {
+      const res = await fetch("/api/recordings", { method: "POST", body: fd });
+      const json = await res.json();
+      console.log("upload recording result", json);
+      await fetchData();
+      alert("تم حفظ التسجيل");
+    } catch (err) {
+      console.error("upload failed", err);
+      alert("فشل رفع التسجيل");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: 20 }}>
+      <h2>رفع Excel للجهات</h2>
+      <input type="file" accept=".xlsx,.xls,.csv" onChange={onFileChangeContacts} disabled={uploading} />
+      <p>{uploading ? "Uploading..." : "اختر ملف Excel يحتوي عمود اسم وعمود رقم الهاتف"}</p>
+
+      <h2 style={{ marginTop: 20 }}>IMPORT DATA — استيراد سجلات المكالمات من Excel</h2>
+      <input type="file" accept=".xlsx,.xls,.csv" onChange={onFileChangeImport} disabled={uploading} />
+      <p>الملف يجب أن يحتوي على عمود رقم الهاتف و/أو عمود RecordingUrl (رابط الملف الصوتي). الأعمدة: Name, Phone, RecordingUrl, CallId</p>
+
+      <h3 style={{ marginTop: 20 }}>سجل مباشر (من الميكروفون)</h3>
+      <div>
+        {!isRecording ? (
+          <button onClick={startRecording} disabled={uploading}>
+            ابدأ تسجيل
+          </button>
+        ) : (
+          <button onClick={stopRecording}>أوقف التسجيل</button>
+        )}
+        <span style={{ marginLeft: 12 }}>{isRecording ? "تسجيل جاري..." : ""}</span>
+      </div>
+
+      <h3 style={{ marginTop: 20 }}>قائمة العملاء ({contacts.length})</h3>
+      <ul>
+        {contacts.map((c) => (
+          <li key={c.id}>
+            {c.name || "-"} — {c.phone}
+          </li>
+        ))}
+      </ul>
+
+      <h3>التسجيلات ({recordings.length})</h3>
+      <ul>
+        {recordings.map((r) => (
+          <li key={r.id} style={{ marginBottom: 12 }}>
+            <div>
+              <strong>{r.contactName ?? "غير مرتبط"}</strong> — {r.filename ?? r.url}
+            </div>
+            {r.url ? <audio controls src={r.url} /> : <div>لا يوجد ملف</div>}
+            <div>
+              {r.url && (
+                <a href={r.url} target="_blank" rel="noreferrer">
+                  فتح في تبويب جديد
+                </a>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
