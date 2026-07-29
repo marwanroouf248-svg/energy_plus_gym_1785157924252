@@ -36,6 +36,21 @@ interface PayrollRow {
   amount: number;
 }
 
+interface CaptainPayrollEntry {
+  id: string;
+  captainId?: string;
+  name: string;
+  phone: string;
+  shifts: number;
+  shiftRate: number;
+  revenueSharePercent: number;
+  revenueAmount: number;
+  bonus: number;
+  incentive: number;
+  penalty: number;
+  penaltyReason: string;
+}
+
 const BRANCHES = ['فرع فودافون', 'فرع الرخاوي'];
 const SALES_BASE_SALARY = 3000;
 const CAPTAIN_BASE_SALARY = 4000;
@@ -70,6 +85,7 @@ export default function StaffManagementContent() {
   const [form, setForm] = useState<StaffFormData>(EMPTY_FORM);
   const [formErrors, setFormErrors] = useState<Partial<StaffFormData>>({});
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [captainPayrollEntries, setCaptainPayrollEntries] = useState<CaptainPayrollEntry[]>([]);
 
   const userRole = userProfile?.role || user?.user_metadata?.role || '';
 
@@ -114,6 +130,33 @@ export default function StaffManagementContent() {
   useEffect(() => {
     fetchStaff();
   }, [fetchStaff]);
+
+  useEffect(() => {
+    const captainMembers = staffList.filter((member) => member.isActive && member.role === 'branch_manager');
+
+    setCaptainPayrollEntries((prev) => {
+      const nextEntries = captainMembers.map((member) => {
+        const existingEntry = prev.find((entry) => entry.captainId === member.id || entry.name === member.fullName);
+
+        return {
+          id: existingEntry?.id || `${member.id}-captain`,
+          captainId: member.id,
+          name: member.fullName,
+          phone: existingEntry?.phone || '',
+          shifts: existingEntry?.shifts || 0,
+          shiftRate: existingEntry?.shiftRate || 0,
+          revenueSharePercent: existingEntry?.revenueSharePercent || 0,
+          revenueAmount: existingEntry?.revenueAmount || 0,
+          bonus: existingEntry?.bonus || 0,
+          incentive: existingEntry?.incentive || 0,
+          penalty: existingEntry?.penalty || 0,
+          penaltyReason: existingEntry?.penaltyReason || '',
+        };
+      });
+
+      return nextEntries;
+    });
+  }, [staffList]);
 
   const validateForm = (): boolean => {
     const errs: Partial<StaffFormData> = {};
@@ -268,8 +311,21 @@ export default function StaffManagementContent() {
       return baseSalary + branchAllowance;
     };
 
+    const captainPayrollRows = captainPayrollEntries.map((entry) => {
+      const shiftSalary = entry.shifts * entry.shiftRate;
+      const revenueShare = (entry.revenueAmount * entry.revenueSharePercent) / 100;
+      const netSalary = CAPTAIN_BASE_SALARY + shiftSalary + revenueShare + entry.bonus + entry.incentive - entry.penalty;
+
+      return {
+        ...entry,
+        shiftSalary,
+        revenueShare,
+        netSalary,
+      };
+    });
+
     const salesTotal = salesMembers.reduce((sum, member) => sum + calculateStaffAmount(member), 0);
-    const captainTotal = captainMembers.reduce((sum, member) => sum + calculateStaffAmount(member), 0);
+    const captainTotal = captainPayrollRows.reduce((sum, entry) => sum + entry.netSalary, 0);
     const housekeepingTotal = activeBranches.length * HOUSEKEEPING_BASE_SALARY;
     const totalPayroll = salesTotal + captainTotal + housekeepingTotal;
 
@@ -281,12 +337,12 @@ export default function StaffManagementContent() {
         branch: member.branch || '—',
         amount: calculateStaffAmount(member),
       })),
-      ...captainMembers.map((member) => ({
-        key: `captain-${member.id}`,
-        name: member.fullName,
+      ...captainPayrollRows.map((entry) => ({
+        key: `captain-${entry.id}`,
+        name: entry.name,
         role: 'Captain',
-        branch: member.branch || '—',
-        amount: calculateStaffAmount(member),
+        branch: captainMembers.find((member) => member.id === entry.captainId)?.branch || '—',
+        amount: entry.netSalary,
       })),
       ...activeBranches.map((branch) => ({
         key: `housekeeping-${branch}`,
@@ -303,8 +359,9 @@ export default function StaffManagementContent() {
       housekeepingTotal,
       totalPayroll,
       rows,
+      captainPayrollRows,
     };
-  }, [staffList]);
+  }, [captainPayrollEntries, staffList]);
 
   if (userRole !== 'admin' && !loading) return null;
 
@@ -354,7 +411,7 @@ export default function StaffManagementContent() {
           <div>
             <h2 className="text-lg font-700 text-foreground">HR Payroll Summary</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              Salary closure for Sales, Captains and Housekeeping calculated from current staff data
+              Organised captain salary review with shifts, revenue share, bonus, incentives and penalties.
             </p>
           </div>
           <div className="rounded-full bg-primary/10 px-3 py-1.5 text-sm font-600 text-primary">
@@ -390,6 +447,169 @@ export default function StaffManagementContent() {
               <p className={`mt-2 text-lg font-700 ${item.color}`}>{item.value}</p>
             </div>
           ))}
+        </div>
+
+        <div className="mt-5 rounded-xl border border-border bg-background/70 p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-base font-700 text-foreground">Captain Payroll Setup</h3>
+              <p className="text-sm text-muted-foreground">Add captain name, phone, shifts, revenue share, bonus, incentive and penalties.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setCaptainPayrollEntries((prev) => [
+                  ...prev,
+                  {
+                    id: `captain-${Date.now()}`,
+                    name: 'New Captain',
+                    phone: '',
+                    shifts: 0,
+                    shiftRate: 0,
+                    revenueSharePercent: 0,
+                    revenueAmount: 0,
+                    bonus: 0,
+                    incentive: 0,
+                    penalty: 0,
+                    penaltyReason: '',
+                  },
+                ])
+              }
+              className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-600 text-primary"
+            >
+              + Add Captain
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            {payrollSummary.captainPayrollRows.map((entry) => (
+              <div key={entry.id} className="rounded-lg border border-border bg-card p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <input
+                    value={entry.name}
+                    onChange={(e) =>
+                      setCaptainPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, name: e.target.value } : item))
+                      )
+                    }
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-600 text-foreground"
+                    placeholder="Captain name"
+                  />
+                  <div className="rounded-full bg-primary/10 px-2.5 py-1 text-sm font-700 text-primary">
+                    {new Intl.NumberFormat('en-EG').format(entry.netSalary)} EGP
+                  </div>
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <input
+                    value={entry.phone}
+                    onChange={(e) =>
+                      setCaptainPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, phone: e.target.value } : item))
+                      )
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    placeholder="Phone number"
+                  />
+                  <input
+                    type="number"
+                    value={entry.shifts}
+                    onChange={(e) =>
+                      setCaptainPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, shifts: Number(e.target.value) } : item))
+                      )
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    placeholder="Shifts"
+                  />
+                  <input
+                    type="number"
+                    value={entry.shiftRate}
+                    onChange={(e) =>
+                      setCaptainPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, shiftRate: Number(e.target.value) } : item))
+                      )
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    placeholder="Shift price"
+                  />
+                  <input
+                    type="number"
+                    value={entry.revenueSharePercent}
+                    onChange={(e) =>
+                      setCaptainPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, revenueSharePercent: Number(e.target.value) } : item))
+                      )
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    placeholder="Revenue %"
+                  />
+                  <input
+                    type="number"
+                    value={entry.revenueAmount}
+                    onChange={(e) =>
+                      setCaptainPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, revenueAmount: Number(e.target.value) } : item))
+                      )
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    placeholder="Revenue amount"
+                  />
+                  <input
+                    type="number"
+                    value={entry.bonus}
+                    onChange={(e) =>
+                      setCaptainPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, bonus: Number(e.target.value) } : item))
+                      )
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    placeholder="Bonus"
+                  />
+                  <input
+                    type="number"
+                    value={entry.incentive}
+                    onChange={(e) =>
+                      setCaptainPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, incentive: Number(e.target.value) } : item))
+                      )
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    placeholder="Incentive"
+                  />
+                  <input
+                    type="number"
+                    value={entry.penalty}
+                    onChange={(e) =>
+                      setCaptainPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, penalty: Number(e.target.value) } : item))
+                      )
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    placeholder="Penalty"
+                  />
+                </div>
+
+                <textarea
+                  value={entry.penaltyReason}
+                  onChange={(e) =>
+                    setCaptainPayrollEntries((prev) =>
+                      prev.map((item) => (item.id === entry.id ? { ...item, penaltyReason: e.target.value } : item))
+                    )
+                  }
+                  className="mt-3 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                  placeholder="Penalty reason"
+                  rows={2}
+                />
+
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <span>Base: {new Intl.NumberFormat('en-EG').format(CAPTAIN_BASE_SALARY)} EGP</span>
+                  <span>Shift pay: {new Intl.NumberFormat('en-EG').format(entry.shiftSalary)} EGP</span>
+                  <span>Revenue share: {new Intl.NumberFormat('en-EG').format(entry.revenueShare)} EGP</span>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="mt-5 overflow-x-auto border-t border-border pt-4">
