@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import Icon from '@/components/ui/AppIcon';
 import Modal from '@/components/ui/Modal';
 import { createClient } from '@/lib/supabase/client';
@@ -28,7 +28,19 @@ interface StaffFormData {
   isActive: boolean;
 }
 
+interface PayrollRow {
+  key: string;
+  name: string;
+  role: string;
+  branch: string;
+  amount: number;
+}
+
 const BRANCHES = ['فرع فودافون', 'فرع الرخاوي'];
+const SALES_BASE_SALARY = 3000;
+const CAPTAIN_BASE_SALARY = 4000;
+const HOUSEKEEPING_BASE_SALARY = 1800;
+const BRANCH_ALLOWANCE = 400;
 const ROLE_LABELS: Record<StaffRole, string> = {
   sales_staff: 'Sales Staff',
   branch_manager: 'Branch Manager',
@@ -244,6 +256,56 @@ export default function StaffManagementContent() {
   const salesCount = staffList.filter((m) => m.role === 'sales_staff').length;
   const managerCount = staffList.filter((m) => m.role === 'branch_manager').length;
 
+  const payrollSummary = useMemo(() => {
+    const activeStaff = staffList.filter((member) => member.isActive);
+    const salesMembers = activeStaff.filter((member) => member.role === 'sales_staff');
+    const captainMembers = activeStaff.filter((member) => member.role === 'branch_manager');
+    const activeBranches = Array.from(new Set(activeStaff.map((member) => member.branch).filter(Boolean)));
+
+    const calculateStaffAmount = (member: StaffMember) => {
+      const baseSalary = member.role === 'branch_manager' ? CAPTAIN_BASE_SALARY : SALES_BASE_SALARY;
+      const branchAllowance = member.branch === 'فرع فودافون' || member.branch === 'فرع الرخاوي' ? BRANCH_ALLOWANCE : 0;
+      return baseSalary + branchAllowance;
+    };
+
+    const salesTotal = salesMembers.reduce((sum, member) => sum + calculateStaffAmount(member), 0);
+    const captainTotal = captainMembers.reduce((sum, member) => sum + calculateStaffAmount(member), 0);
+    const housekeepingTotal = activeBranches.length * HOUSEKEEPING_BASE_SALARY;
+    const totalPayroll = salesTotal + captainTotal + housekeepingTotal;
+
+    const rows: PayrollRow[] = [
+      ...salesMembers.map((member) => ({
+        key: `sales-${member.id}`,
+        name: member.fullName,
+        role: 'Sales',
+        branch: member.branch || '—',
+        amount: calculateStaffAmount(member),
+      })),
+      ...captainMembers.map((member) => ({
+        key: `captain-${member.id}`,
+        name: member.fullName,
+        role: 'Captain',
+        branch: member.branch || '—',
+        amount: calculateStaffAmount(member),
+      })),
+      ...activeBranches.map((branch) => ({
+        key: `housekeeping-${branch}`,
+        name: `${branch} - Housekeeping`,
+        role: 'Housekeeping',
+        branch,
+        amount: HOUSEKEEPING_BASE_SALARY,
+      })),
+    ];
+
+    return {
+      salesTotal,
+      captainTotal,
+      housekeepingTotal,
+      totalPayroll,
+      rows,
+    };
+  }, [staffList]);
+
   if (userRole !== 'admin' && !loading) return null;
 
   return (
@@ -285,6 +347,73 @@ export default function StaffManagementContent() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="bg-card border border-border rounded-xl p-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-700 text-foreground">HR Payroll Summary</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Salary closure for Sales, Captains and Housekeeping calculated from current staff data
+            </p>
+          </div>
+          <div className="rounded-full bg-primary/10 px-3 py-1.5 text-sm font-600 text-primary">
+            Total Payroll: {new Intl.NumberFormat('en-EG').format(payrollSummary.totalPayroll)} EGP
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-4">
+          {[
+            {
+              label: 'Sales Salary',
+              value: `${new Intl.NumberFormat('en-EG').format(payrollSummary.salesTotal)} EGP`,
+              color: 'text-accent',
+            },
+            {
+              label: 'Captains Salary',
+              value: `${new Intl.NumberFormat('en-EG').format(payrollSummary.captainTotal)} EGP`,
+              color: 'text-warning',
+            },
+            {
+              label: 'Housekeeping',
+              value: `${new Intl.NumberFormat('en-EG').format(payrollSummary.housekeepingTotal)} EGP`,
+              color: 'text-positive',
+            },
+            {
+              label: 'Total',
+              value: `${new Intl.NumberFormat('en-EG').format(payrollSummary.totalPayroll)} EGP`,
+              color: 'text-primary',
+            },
+          ].map((item) => (
+            <div key={item.label} className="rounded-lg border border-border bg-background/70 p-3">
+              <p className="text-xs uppercase tracking-wide text-muted-foreground">{item.label}</p>
+              <p className={`mt-2 text-lg font-700 ${item.color}`}>{item.value}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-5 overflow-x-auto border-t border-border pt-4">
+          <table className="min-w-full text-sm">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground">
+                <th className="pb-2 pr-3 font-600">Person</th>
+                <th className="pb-2 pr-3 font-600">Role</th>
+                <th className="pb-2 pr-3 font-600">Branch</th>
+                <th className="pb-2 text-right font-600">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payrollSummary.rows.map((row) => (
+                <tr key={row.key} className="border-b border-border/70 last:border-b-0">
+                  <td className="py-2 pr-3 font-500 text-foreground">{row.name}</td>
+                  <td className="py-2 pr-3 text-muted-foreground">{row.role}</td>
+                  <td className="py-2 pr-3 text-muted-foreground">{row.branch}</td>
+                  <td className="py-2 text-right font-600 text-primary">{new Intl.NumberFormat('en-EG').format(row.amount)} EGP</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Error Banner */}
