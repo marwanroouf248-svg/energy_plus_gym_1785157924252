@@ -30,7 +30,7 @@ export default function LoginPage() {
           <div className="flex items-center gap-3 mb-16">
             <div className="relative">
               <div className="absolute inset-0 rounded-xl blur-md opacity-50" style={{ background: 'radial-gradient(circle, #c9a84c, transparent)' }} />
-              <div className="relative w-12 h-12 rounded-xl overflow-hidden ring-1" style={{ ringColor: 'rgba(201,168,76,0.3)' }}>
+              <div className="relative w-12 h-12 rounded-xl overflow-hidden" style={{ border: '1px solid rgba(201,168,76,0.3)' }}>
                 <Image
                   src="/assets/images/328A1CF7-CBED-4839-A339-01A156563B74-1785160489268.jpg"
                   alt="Energy Plus Logo"

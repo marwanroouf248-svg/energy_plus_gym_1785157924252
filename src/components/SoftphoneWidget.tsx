@@ -43,6 +43,13 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
   const [elapsed, setElapsed] = useState(0);
   const [notes, setNotes] = useState('');
   const [muted, setMuted] = useState(false);
+  const [demoMode, setDemoMode] = useState<boolean>(() => {
+    try {
+      return typeof window !== 'undefined' && localStorage.getItem('softphone_demo_mode') === 'true';
+    } catch {
+      return true;
+    }
+  });
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const elapsedRef = useRef(0);
@@ -55,6 +62,14 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
       isMounted.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') localStorage.setItem('softphone_demo_mode', demoMode ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+  }, [demoMode]);
 
   const startTimer = useCallback(() => {
     elapsedRef.current = 0;
@@ -74,8 +89,50 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
 
   const initiateCall = async () => {
     if (!contact) return;
+    // Ensure webhook base URL is available in the client environment
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      if (isMounted.current) {
+        setCallState('failed');
+        setError('Missing NEXT_PUBLIC_SUPABASE_URL. Set this env var and redeploy.');
+      }
+      return;
+    }
     setCallState('initiating');
     setError(null);
+
+    // Client-side demo mode: insert a demo call log and simulate call lifecycle
+    if (demoMode) {
+      const demoSid = `CA_demo_${Date.now()}`;
+      try {
+        await supabase.from('call_logs').insert({
+          lead_id: contact.leadId || null,
+          agent_id: contact.agentId || null,
+          contact_name: contact.name || contact.phone,
+          contact_phone: contact.phone,
+          contact_type: contact.type || 'lead',
+          direction: 'outbound',
+          call_sid: demoSid,
+          call_status: 'initiated',
+          assigned_to: contact.assignedTo || '',
+        });
+      } catch (e) {
+        console.error('Failed to insert demo call log:', e);
+      }
+
+      if (isMounted.current) {
+        setCallSid(demoSid);
+        setCallState('ringing');
+      }
+
+      setTimeout(() => {
+        if (isMounted.current) {
+          setCallState('in-progress');
+          startTimer();
+        }
+      }, 3000);
+
+      return;
+    }
 
     try {
       const { data, error: fnError } = await supabase.functions.invoke('twilio-call/initiate', {
@@ -88,14 +145,39 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
           assignedTo: contact.assignedTo || '',
           assignedUserId: contact.assignedUserId || null,
           webhookBaseUrl: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/twilio-call`,
+          // Force demo/simulation mode so calls can be initiated without a Twilio account
+          demo: true,
         },
       });
 
       if (fnError) {
+        // Log details for debugging and show a more informative message to the user
+        // Attempt to extract useful info from the function response
+        console.error('twilio-call function error:', fnError, data);
+        const serverMsg = (data && (data.error?.details || data.error || data.message)) || fnError.message || 'Failed to initiate call. Check Twilio configuration.';
+
         if (isMounted.current) {
           setCallState('failed');
-          setError('Failed to initiate call. Check Twilio configuration.');
+          setError(typeof serverMsg === 'string' ? serverMsg : JSON.stringify(serverMsg));
         }
+
+        // Fallback: insert a failed call log record so the call is visible in the UI
+        try {
+          await supabase.from('call_logs').insert({
+            lead_id: contact.leadId || null,
+            agent_id: contact.agentId || null,
+            contact_name: contact.name || contact.phone,
+            contact_phone: contact.phone,
+            contact_type: contact.type || 'lead',
+            direction: 'outbound',
+            call_sid: null,
+            call_status: 'failed',
+            assigned_to: contact.assignedTo || '',
+          });
+        } catch (e) {
+          console.error('Failed to insert fallback call log:', e);
+        }
+
         return;
       }
 
@@ -124,11 +206,18 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
     const finalElapsed = elapsedRef.current;
     if (isMounted.current) setCallState('ended');
 
-    // Update notes in DB if we have a callSid
-    if (callSid && notes.trim()) {
+    if (callSid) {
+      const payload: Record<string, unknown> = {
+        call_status: 'completed',
+        call_duration: finalElapsed,
+      };
+      if (notes.trim()) {
+        payload.notes = notes.trim();
+      }
+
       await supabase
         .from('call_logs')
-        .update({ notes: notes.trim() })
+        .update(payload)
         .eq('call_sid', callSid);
     }
 
@@ -159,6 +248,17 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
   const isRinging = callState === 'ringing';
   const isInitiating = callState === 'initiating';
   const isEnded = callState === 'ended' || callState === 'failed';
+  const statusLabel = callState === 'failed'
+    ? 'Call Failed'
+    : isInitiating
+      ? 'Initiating…'
+      : isRinging
+        ? 'Ringing…'
+        : isActive
+          ? 'Live Call'
+          : isEnded
+            ? 'Call Ended'
+            : 'Softphone';
 
   return (
     <div className="fixed bottom-6 right-6 z-50 w-80 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
@@ -167,15 +267,24 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-positive animate-pulse' : isRinging || isInitiating ? 'bg-warning animate-pulse' : isEnded ? 'bg-muted-foreground' : 'bg-primary'}`} />
           <span className="text-xs font-600 text-foreground uppercase tracking-wide">
-            {isInitiating ? 'Initiating…' : isRinging ? 'Ringing…' : isActive ? 'Live Call' : isEnded ? 'Call Ended' : callState === 'failed' ? 'Call Failed' : 'Softphone'}
+            {statusLabel}
           </span>
         </div>
-        <button
-          onClick={handleClose}
-          className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150"
-        >
-          <Icon name="XMarkIcon" size={16} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setDemoMode(!demoMode)}
+            title={demoMode ? 'Demo mode (click to switch to Live)' : 'Live mode (click to switch to Demo)'}
+            className={`px-2 py-1 rounded-md text-xs font-600 border ${demoMode ? 'bg-warning-bg text-warning border-warning/20' : 'bg-card text-foreground border-border'}`}
+          >
+            {demoMode ? 'Demo' : 'Live'}
+          </button>
+          <button
+            onClick={handleClose}
+            className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150"
+          >
+            <Icon name="XMarkIcon" size={16} />
+          </button>
+        </div>
       </div>
 
       {/* Contact Info */}

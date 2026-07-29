@@ -13,6 +13,7 @@ interface NavItem {
   icon: string;
   badge?: number;
   roles: string[];
+  children?: NavItem[];
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -21,7 +22,15 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Leads', href: '/leads', icon: 'UserPlusIcon', badge: 7, roles: ['admin', 'sales_staff'] },
   { label: 'Call Tracking', href: '/call-tracking', icon: 'PhoneIcon', roles: ['admin', 'branch_manager', 'sales_staff'] },
   { label: 'Packages', href: '/packages', icon: 'TagIcon', roles: ['admin'] },
-  { label: 'Staff', href: '/staff-management', icon: 'IdentificationIcon', roles: ['admin'] },
+  {
+    label: 'Staff',
+    href: '/staff-management',
+    icon: 'IdentificationIcon',
+    roles: ['admin'],
+    children: [
+      { label: 'HR', href: '/hr', icon: 'UserGroupIcon', roles: ['admin'] },
+    ],
+  },
   { label: 'Team Performance', href: '/team-performance', icon: 'TrophyIcon', roles: ['admin', 'branch_manager'] },
   { label: 'Branches', href: '/branches', icon: 'BuildingOfficeIcon', roles: ['admin'] },
   { label: 'Reports', href: '/reports', icon: 'DocumentChartBarIcon', roles: ['admin', 'branch_manager'] },
@@ -158,6 +167,27 @@ export default function Sidebar({ currentPath }: SidebarProps) {
                   </>
                 )}
               </Link>
+              {item.children && !collapsed && (
+                <div className="ml-6 mt-1 space-y-1">
+                  {item.children
+                    .filter((c) => c.roles.includes(userRole))
+                    .map((child) => {
+                      const childActive = currentPath === child.href;
+                      return (
+                        <Link
+                          key={`nav-child-${child.href}`}
+                          href={child.href}
+                          className={`group flex items-center gap-2 rounded-md transition-all duration-150 px-2 py-1 ${
+                            childActive ? 'bg-gradient-to-r from-yellow-400/10 to-transparent border-l-2 border-yellow-400' : ''
+                          }`}
+                        >
+                          <Icon name={child.icon as any} size={14} className="shrink-0" style={{ color: childActive ? '#c9a84c' : '#6b7494' } as React.CSSProperties} />
+                          <span className="text-xs font-500 truncate" style={{ color: childActive ? '#f0f2f8' : '#8892aa' }}>{child.label}</span>
+                        </Link>
+                      );
+                    })}
+                </div>
+              )}
             );
           })}
         </div>

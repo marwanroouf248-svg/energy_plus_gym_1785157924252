@@ -55,7 +55,7 @@ Deno.serve(async (req) => {
   try {
     // ── POST /twilio-call/initiate ──────────────────────────────────────────
     if (req.method === 'POST' && path === 'initiate') {
-      const { to, contactName, contactType, leadId, agentId, assignedTo, webhookBaseUrl } = await req.json();
+      const { to, contactName, contactType, leadId, agentId, assignedTo, webhookBaseUrl, demo } = await req.json();
 
       if (!to) {
         return new Response(JSON.stringify({ error: 'Missing required field: to' }), {
@@ -64,7 +64,8 @@ Deno.serve(async (req) => {
         });
       }
 
-      if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
+      // If caller requests demo mode, or Twilio is not configured, insert a demo call log
+      if (demo === true || !TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
         // Demo mode: insert a pending call log without real Twilio call
         const demoSid = `CA_demo_${Date.now()}`;
         await insertCallLog({
