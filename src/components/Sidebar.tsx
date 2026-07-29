@@ -125,69 +125,70 @@ export default function Sidebar({ currentPath }: SidebarProps) {
           {mainItems.map((item) => {
             const isActive = currentPath === item.href;
             return (
-              <Link
-                key={`nav-${item.href}`}
-                href={item.href}
-                title={collapsed ? item.label : undefined}
-                className={`group flex items-center gap-3 rounded-lg transition-all duration-200 ${
-                  collapsed ? 'justify-center h-10 w-10 mx-auto' : 'px-3 py-2.5'
-                }`}
-                style={
-                  isActive
-                    ? {
-                        background: 'linear-gradient(90deg, rgba(201,168,76,0.14) 0%, rgba(201,168,76,0.04) 100%)',
-                        borderLeft: collapsed ? 'none' : '2px solid #c9a84c',
-                        paddingLeft: collapsed ? undefined : '10px',
-                      }
-                    : {}
-                }
-              >
-                <Icon
-                  name={item.icon as any}
-                  size={17}
-                  className="shrink-0 transition-colors duration-200"
-                  style={{ color: isActive ? '#c9a84c' : '#6b7494' } as React.CSSProperties}
-                />
-                {!collapsed && (
-                  <>
-                    <span
-                      className="text-sm font-500 flex-1 truncate transition-colors duration-200"
-                      style={{ color: isActive ? '#f0f2f8' : '#8892aa' }}
-                    >
-                      {item.label}
-                    </span>
-                    {item.badge && (
+              <div key={`nav-group-${item.href}`}>
+                <Link
+                  href={item.href}
+                  title={collapsed ? item.label : undefined}
+                  className={`group flex items-center gap-3 rounded-lg transition-all duration-200 ${
+                    collapsed ? 'justify-center h-10 w-10 mx-auto' : 'px-3 py-2.5'
+                  }`}
+                  style={
+                    isActive
+                      ? {
+                          background: 'linear-gradient(90deg, rgba(201,168,76,0.14) 0%, rgba(201,168,76,0.04) 100%)',
+                          borderLeft: collapsed ? 'none' : '2px solid #c9a84c',
+                          paddingLeft: collapsed ? undefined : '10px',
+                        }
+                      : {}
+                  }
+                >
+                  <Icon
+                    name={item.icon as any}
+                    size={17}
+                    className="shrink-0 transition-colors duration-200"
+                    style={{ color: isActive ? '#c9a84c' : '#6b7494' } as React.CSSProperties}
+                  />
+                  {!collapsed && (
+                    <>
                       <span
-                        className="text-xs font-700 rounded-full px-1.5 py-0.5 tabular-nums"
-                        style={{ background: 'rgba(201,168,76,0.15)', color: '#c9a84c', fontSize: '10px' }}
+                        className="text-sm font-500 flex-1 truncate transition-colors duration-200"
+                        style={{ color: isActive ? '#f0f2f8' : '#8892aa' }}
                       >
-                        {item.badge}
+                        {item.label}
                       </span>
-                    )}
-                  </>
-                )}
-              </Link>
-              {item.children && !collapsed && (
-                <div className="ml-6 mt-1 space-y-1">
-                  {item.children
-                    .filter((c) => c.roles.includes(userRole))
-                    .map((child) => {
-                      const childActive = currentPath === child.href;
-                      return (
-                        <Link
-                          key={`nav-child-${child.href}`}
-                          href={child.href}
-                          className={`group flex items-center gap-2 rounded-md transition-all duration-150 px-2 py-1 ${
-                            childActive ? 'bg-gradient-to-r from-yellow-400/10 to-transparent border-l-2 border-yellow-400' : ''
-                          }`}
+                      {item.badge && (
+                        <span
+                          className="text-xs font-700 rounded-full px-1.5 py-0.5 tabular-nums"
+                          style={{ background: 'rgba(201,168,76,0.15)', color: '#c9a84c', fontSize: '10px' }}
                         >
-                          <Icon name={child.icon as any} size={14} className="shrink-0" style={{ color: childActive ? '#c9a84c' : '#6b7494' } as React.CSSProperties} />
-                          <span className="text-xs font-500 truncate" style={{ color: childActive ? '#f0f2f8' : '#8892aa' }}>{child.label}</span>
-                        </Link>
-                      );
-                    })}
-                </div>
-              )}
+                          {item.badge}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </Link>
+                {item.children && !collapsed && (
+                  <div className="ml-6 mt-1 space-y-1">
+                    {item.children
+                      .filter((c) => c.roles.includes(userRole))
+                      .map((child) => {
+                        const childActive = currentPath === child.href;
+                        return (
+                          <Link
+                            key={`nav-child-${child.href}`}
+                            href={child.href}
+                            className={`group flex items-center gap-2 rounded-md transition-all duration-150 px-2 py-1 ${
+                              childActive ? 'bg-gradient-to-r from-yellow-400/10 to-transparent border-l-2 border-yellow-400' : ''
+                            }`}
+                          >
+                            <Icon name={child.icon as any} size={14} className="shrink-0" style={{ color: childActive ? '#c9a84c' : '#6b7494' } as React.CSSProperties} />
+                            <span className="text-xs font-500 truncate" style={{ color: childActive ? '#f0f2f8' : '#8892aa' }}>{child.label}</span>
+                          </Link>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
             );
           })}
         </div>
