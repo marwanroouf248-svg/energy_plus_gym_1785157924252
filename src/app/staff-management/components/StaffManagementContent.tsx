@@ -51,6 +51,16 @@ interface CaptainPayrollEntry {
   penaltyReason: string;
 }
 
+interface SalesPayrollEntry {
+  id: string;
+  salesId?: string;
+  name: string;
+  shifts: number;
+  shiftRate: number;
+  targetCommission: number;
+  extraCommission: number;
+}
+
 const BRANCHES = ['فرع فودافون', 'فرع الرخاوي'];
 const SALES_BASE_SALARY = 3000;
 const CAPTAIN_BASE_SALARY = 4000;
@@ -86,8 +96,15 @@ export default function StaffManagementContent() {
   const [formErrors, setFormErrors] = useState<Partial<StaffFormData>>({});
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [captainPayrollEntries, setCaptainPayrollEntries] = useState<CaptainPayrollEntry[]>([]);
+  const [salesPayrollEntries, setSalesPayrollEntries] = useState<SalesPayrollEntry[]>([]);
+  const [savingPayroll, setSavingPayroll] = useState(false);
+  const [payrollSavedMessage, setPayrollSavedMessage] = useState('');
 
-  const userRole = userProfile?.role || user?.user_metadata?.role || '';
+  const userRole = useMemo(() => {
+    const profileRole = userProfile?.role || userProfile?.user_role;
+    const metadataRole = user?.user_metadata?.role || user?.raw_user_meta_data?.role;
+    return profileRole || metadataRole || '';
+  }, [user, userProfile]);
 
   // Redirect non-admins
   useEffect(() => {
@@ -133,6 +150,7 @@ export default function StaffManagementContent() {
 
   useEffect(() => {
     const captainMembers = staffList.filter((member) => member.isActive && member.role === 'branch_manager');
+    const salesMembers = staffList.filter((member) => member.isActive && member.role === 'sales_staff');
 
     setCaptainPayrollEntries((prev) => {
       const nextEntries = captainMembers.map((member) => {
@@ -151,6 +169,24 @@ export default function StaffManagementContent() {
           incentive: existingEntry?.incentive || 0,
           penalty: existingEntry?.penalty || 0,
           penaltyReason: existingEntry?.penaltyReason || '',
+        };
+      });
+
+      return nextEntries;
+    });
+
+    setSalesPayrollEntries((prev) => {
+      const nextEntries = salesMembers.map((member) => {
+        const existingEntry = prev.find((entry) => entry.salesId === member.id || entry.name === member.fullName);
+
+        return {
+          id: existingEntry?.id || `${member.id}-sales`,
+          salesId: member.id,
+          name: member.fullName,
+          shifts: existingEntry?.shifts || 0,
+          shiftRate: existingEntry?.shiftRate || 0,
+          targetCommission: existingEntry?.targetCommission || 0,
+          extraCommission: existingEntry?.extraCommission || 0,
         };
       });
 
@@ -281,6 +317,25 @@ export default function StaffManagementContent() {
     }
   };
 
+  const handleSavePayroll = async () => {
+    try {
+      setSavingPayroll(true);
+      setPayrollSavedMessage('');
+      const payload = {
+        savedAt: new Date().toISOString(),
+        captains: captainPayrollEntries,
+        sales: salesPayrollEntries,
+      };
+
+      localStorage.setItem('hr-payroll-data', JSON.stringify(payload));
+      setPayrollSavedMessage('Payroll data saved successfully');
+    } catch (err: any) {
+      setError(err.message || 'Failed to save payroll data');
+    } finally {
+      setSavingPayroll(false);
+    }
+  };
+
   const filtered = staffList.filter((m) => {
     const matchSearch =
       m.fullName.toLowerCase().includes(search.toLowerCase()) ||
@@ -324,18 +379,29 @@ export default function StaffManagementContent() {
       };
     });
 
-    const salesTotal = salesMembers.reduce((sum, member) => sum + calculateStaffAmount(member), 0);
+    const salesPayrollRows = salesPayrollEntries.map((entry) => {
+      const shiftSalary = entry.shifts * entry.shiftRate;
+      const totalSalary = SALES_BASE_SALARY + shiftSalary + entry.targetCommission + entry.extraCommission;
+
+      return {
+        ...entry,
+        shiftSalary,
+        totalSalary,
+      };
+    });
+
+    const salesTotal = salesPayrollRows.reduce((sum, entry) => sum + entry.totalSalary, 0);
     const captainTotal = captainPayrollRows.reduce((sum, entry) => sum + entry.netSalary, 0);
     const housekeepingTotal = activeBranches.length * HOUSEKEEPING_BASE_SALARY;
     const totalPayroll = salesTotal + captainTotal + housekeepingTotal;
 
     const rows: PayrollRow[] = [
-      ...salesMembers.map((member) => ({
-        key: `sales-${member.id}`,
-        name: member.fullName,
+      ...salesPayrollRows.map((entry) => ({
+        key: `sales-${entry.id}`,
+        name: entry.name,
         role: 'Sales',
-        branch: member.branch || '—',
-        amount: calculateStaffAmount(member),
+        branch: salesMembers.find((member) => member.id === entry.salesId)?.branch || '—',
+        amount: entry.totalSalary,
       })),
       ...captainPayrollRows.map((entry) => ({
         key: `captain-${entry.id}`,
@@ -360,8 +426,9 @@ export default function StaffManagementContent() {
       totalPayroll,
       rows,
       captainPayrollRows,
+      salesPayrollRows,
     };
-  }, [captainPayrollEntries, staffList]);
+  }, [captainPayrollEntries, salesPayrollEntries, staffList]);
 
   if (userRole !== 'admin' && !loading) return null;
 
@@ -406,10 +473,14 @@ export default function StaffManagementContent() {
         ))}
       </div>
 
-      <div className="bg-card border border-border rounded-xl p-5">
+      <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 p-5 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h2 className="text-lg font-700 text-foreground">HR Payroll Summary</h2>
+            <div className="inline-flex items-center gap-2 rounded-full bg-primary/15 px-3 py-1 text-sm font-700 text-primary">
+              <Icon name="BriefcaseIcon" size={14} />
+              HR Payroll
+            </div>
+            <h2 className="mt-2 text-lg font-700 text-foreground">HR Payroll Summary</h2>
             <p className="text-sm text-muted-foreground mt-1">
               Organised captain salary review with shifts, revenue share, bonus, incentives and penalties.
             </p>
@@ -610,6 +681,126 @@ export default function StaffManagementContent() {
               </div>
             ))}
           </div>
+        </div>
+
+        <div className="mt-5 rounded-xl border border-border bg-card p-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="text-base font-700 text-foreground">Sales Payroll Setup</h3>
+              <p className="text-sm text-muted-foreground">Add shifts, shift price, target commission and extra commission.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setSalesPayrollEntries((prev) => [
+                  ...prev,
+                  {
+                    id: `sales-${Date.now()}`,
+                    name: 'New Sales Staff',
+                    shifts: 0,
+                    shiftRate: 0,
+                    targetCommission: 0,
+                    extraCommission: 0,
+                  },
+                ])
+              }
+              className="rounded-lg border border-accent/30 bg-accent/10 px-3 py-2 text-sm font-600 text-accent"
+            >
+              + Add Sales
+            </button>
+          </div>
+
+          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+            {payrollSummary.salesPayrollRows.map((entry) => (
+              <div key={entry.id} className="rounded-lg border border-border bg-background p-4">
+                <div className="flex items-center justify-between gap-2">
+                  <input
+                    value={entry.name}
+                    onChange={(e) =>
+                      setSalesPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, name: e.target.value } : item))
+                      )
+                    }
+                    className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-600 text-foreground"
+                    placeholder="Sales staff name"
+                  />
+                  <div className="rounded-full bg-accent/10 px-2.5 py-1 text-sm font-700 text-accent">
+                    {new Intl.NumberFormat('en-EG').format(entry.totalSalary)} EGP
+                  </div>
+                </div>
+
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <input
+                    type="number"
+                    value={entry.shifts}
+                    onChange={(e) =>
+                      setSalesPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, shifts: Number(e.target.value) } : item))
+                      )
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    placeholder="Shifts"
+                  />
+                  <input
+                    type="number"
+                    value={entry.shiftRate}
+                    onChange={(e) =>
+                      setSalesPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, shiftRate: Number(e.target.value) } : item))
+                      )
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    placeholder="Shift price"
+                  />
+                  <input
+                    type="number"
+                    value={entry.targetCommission}
+                    onChange={(e) =>
+                      setSalesPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, targetCommission: Number(e.target.value) } : item))
+                      )
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    placeholder="Target commission"
+                  />
+                  <input
+                    type="number"
+                    value={entry.extraCommission}
+                    onChange={(e) =>
+                      setSalesPayrollEntries((prev) =>
+                        prev.map((item) => (item.id === entry.id ? { ...item, extraCommission: Number(e.target.value) } : item))
+                      )
+                    }
+                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                    placeholder="Extra commission"
+                  />
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <span>Base: {new Intl.NumberFormat('en-EG').format(SALES_BASE_SALARY)} EGP</span>
+                  <span>Shift pay: {new Intl.NumberFormat('en-EG').format(entry.shiftSalary)} EGP</span>
+                  <span>Total: {new Intl.NumberFormat('en-EG').format(entry.totalSalary)} EGP</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            {payrollSavedMessage ? (
+              <p className="text-sm font-600 text-positive">{payrollSavedMessage}</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Data is stored locally in this browser for quick payroll closing.</p>
+            )}
+          </div>
+          <button
+            onClick={handleSavePayroll}
+            disabled={savingPayroll}
+            className="rounded-lg bg-primary px-4 py-2 text-sm font-600 text-primary-foreground disabled:opacity-60"
+          >
+            {savingPayroll ? 'Saving...' : 'Save Payroll'}
+          </button>
         </div>
 
         <div className="mt-5 overflow-x-auto border-t border-border pt-4">
