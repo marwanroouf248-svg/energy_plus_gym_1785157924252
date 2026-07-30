@@ -43,6 +43,7 @@ interface CaptainPayrollEntry {
   phone: string;
   shifts: number;
   shiftRate: number;
+  baseSalary: number;
   revenueSharePercent: number;
   revenueAmount: number;
   bonus: number;
@@ -105,15 +106,18 @@ export default function StaffManagementContent() {
   const userRole = useMemo(() => {
     const profileRole = userProfile?.role || userProfile?.user_role;
     const metadataRole = user?.user_metadata?.role || user?.raw_user_meta_data?.role;
-    return profileRole || metadataRole || '';
+    const rawRole = profileRole || metadataRole || '';
+    return String(rawRole).toLowerCase().trim();
   }, [user, userProfile]);
 
-  // Redirect non-admins
+  const isAdminUser = ['admin', 'super_admin', 'administrator'].includes(userRole);
+
+  // Redirect non-admins only when the role is clearly resolved
   useEffect(() => {
-    if (!loading && userRole !== 'admin') {
+    if (!loading && user && !isAdminUser && userRole) {
       router.replace('/');
     }
-  }, [userRole, loading, router]);
+  }, [userRole, isAdminUser, loading, router, user]);
 
   const fetchStaff = useCallback(async () => {
     setLoading(true);
@@ -165,6 +169,7 @@ export default function StaffManagementContent() {
           phone: existingEntry?.phone || '',
           shifts: existingEntry?.shifts || 0,
           shiftRate: existingEntry?.shiftRate || 0,
+          baseSalary: existingEntry?.baseSalary || CAPTAIN_BASE_SALARY,
           revenueSharePercent: existingEntry?.revenueSharePercent || 0,
           revenueAmount: existingEntry?.revenueAmount || 0,
           bonus: existingEntry?.bonus || 0,
@@ -174,6 +179,26 @@ export default function StaffManagementContent() {
           withdrawals: existingEntry?.withdrawals || 0,
         };
       });
+
+      if (nextEntries.length === 0) {
+        return [
+          {
+            id: 'captain-placeholder',
+            name: 'New Captain',
+            phone: '',
+            shifts: 0,
+            shiftRate: 0,
+            baseSalary: CAPTAIN_BASE_SALARY,
+            revenueSharePercent: 0,
+            revenueAmount: 0,
+            bonus: 0,
+            incentive: 0,
+            penalty: 0,
+            penaltyReason: '',
+            withdrawals: 0,
+          },
+        ];
+      }
 
       return nextEntries;
     });
@@ -192,6 +217,19 @@ export default function StaffManagementContent() {
           extraCommission: existingEntry?.extraCommission || 0,
         };
       });
+
+      if (nextEntries.length === 0) {
+        return [
+          {
+            id: 'sales-placeholder',
+            name: 'New Sales Staff',
+            shifts: 0,
+            shiftRate: 0,
+            targetCommission: 0,
+            extraCommission: 0,
+          },
+        ];
+      }
 
       return nextEntries;
     });
@@ -373,7 +411,7 @@ export default function StaffManagementContent() {
       const shiftSalary = entry.shifts * entry.shiftRate;
       const revenueShare = (entry.revenueAmount * entry.revenueSharePercent) / 100;
       const captainShare = revenueShare * 0.5;
-      const grossSalary = CAPTAIN_BASE_SALARY + shiftSalary + captainShare + entry.bonus + entry.incentive;
+      const grossSalary = entry.baseSalary + shiftSalary + captainShare + entry.bonus + entry.incentive;
       const netSalary = grossSalary - entry.penalty - entry.withdrawals;
 
       return {
@@ -437,7 +475,8 @@ export default function StaffManagementContent() {
     };
   }, [captainPayrollEntries, salesPayrollEntries, staffList]);
 
-  if (userRole !== 'admin' && !loading) return null;
+  if (!loading && !user) return null;
+  if (!loading && user && !isAdminUser && userRole) return null;
 
   return (
     <div className="space-y-6">
@@ -555,6 +594,7 @@ export default function StaffManagementContent() {
                     phone: '',
                     shifts: 0,
                     shiftRate: 0,
+                    baseSalary: CAPTAIN_BASE_SALARY,
                     revenueSharePercent: 0,
                     revenueAmount: 0,
                     bonus: 0,
@@ -591,6 +631,20 @@ export default function StaffManagementContent() {
                 </div>
 
                 <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">الراتب الأساسي</label>
+                    <input
+                      type="number"
+                      value={entry.baseSalary}
+                      onChange={(e) =>
+                        setCaptainPayrollEntries((prev) =>
+                          prev.map((item) => (item.id === entry.id ? { ...item, baseSalary: Number(e.target.value) } : item))
+                        )
+                      }
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                      placeholder="أدخل الراتب الأساسي"
+                    />
+                  </div>
                   <div className="space-y-1">
                     <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">رقم الهاتف</label>
                     <input
@@ -763,9 +817,10 @@ export default function StaffManagementContent() {
                 />
 
                 <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  <span>الأساس: {new Intl.NumberFormat('en-EG').format(CAPTAIN_BASE_SALARY)} EGP</span>
+                  <span>الأساس: {new Intl.NumberFormat('en-EG').format(entry.baseSalary)} EGP</span>
                   <span>أجر الشيفت: {new Intl.NumberFormat('en-EG').format(entry.shiftSalary)} EGP</span>
                   <span>مشاركة التغذية/البرفيت: {new Intl.NumberFormat('en-EG').format(entry.captainShare)} EGP</span>
+                  <span>الصافي: {new Intl.NumberFormat('en-EG').format(entry.netSalary)} EGP</span>
                 </div>
               </div>
             ))}
