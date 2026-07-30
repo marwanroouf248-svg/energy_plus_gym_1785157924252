@@ -99,6 +99,7 @@ export default function StaffManagementContent() {
   const [salesPayrollEntries, setSalesPayrollEntries] = useState<SalesPayrollEntry[]>([]);
   const [savingPayroll, setSavingPayroll] = useState(false);
   const [payrollSavedMessage, setPayrollSavedMessage] = useState('');
+  const [isPayrollOpen, setIsPayrollOpen] = useState(true);
 
   const userRole = useMemo(() => {
     const profileRole = userProfile?.role || userProfile?.user_role;
@@ -474,7 +475,7 @@ export default function StaffManagementContent() {
       </div>
 
       <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/10 via-background to-accent/10 p-5 shadow-sm">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-primary/15 px-3 py-1 text-sm font-700 text-primary">
               <Icon name="BriefcaseIcon" size={14} />
@@ -485,11 +486,22 @@ export default function StaffManagementContent() {
               Organised captain salary review with shifts, revenue share, bonus, incentives and penalties.
             </p>
           </div>
-          <div className="rounded-full bg-primary/10 px-3 py-1.5 text-sm font-600 text-primary">
-            Total Payroll: {new Intl.NumberFormat('en-EG').format(payrollSummary.totalPayroll)} EGP
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsPayrollOpen((prev) => !prev)}
+              className="rounded-lg border border-primary/30 bg-primary/10 px-3 py-2 text-sm font-600 text-primary"
+            >
+              {isPayrollOpen ? 'Hide Payroll' : 'Open HR Payroll'}
+            </button>
+            <div className="rounded-full bg-primary/10 px-3 py-1.5 text-sm font-600 text-primary">
+              Total Payroll: {new Intl.NumberFormat('en-EG').format(payrollSummary.totalPayroll)} EGP
+            </div>
           </div>
         </div>
 
+        {isPayrollOpen ? (
+        <>
         <div className="mt-4 grid gap-3 md:grid-cols-4">
           {[
             {
@@ -825,6 +837,24 @@ export default function StaffManagementContent() {
             </tbody>
           </table>
         </div>
+        </>
+        ) : (
+          <div className="mt-4 rounded-xl border border-dashed border-primary/30 bg-background/60 p-4 text-sm text-muted-foreground">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-600 text-foreground">HR Payroll is ready</p>
+                <p>Open it to review captain and sales payroll details plus the total summary.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPayrollOpen(true)}
+                className="rounded-lg bg-primary px-3 py-2 text-sm font-600 text-primary-foreground"
+              >
+                Open HR Payroll
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Error Banner */}
