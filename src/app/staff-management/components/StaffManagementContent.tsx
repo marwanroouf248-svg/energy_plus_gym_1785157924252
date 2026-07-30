@@ -49,6 +49,7 @@ interface CaptainPayrollEntry {
   incentive: number;
   penalty: number;
   penaltyReason: string;
+  withdrawals: number;
 }
 
 interface SalesPayrollEntry {
@@ -170,6 +171,7 @@ export default function StaffManagementContent() {
           incentive: existingEntry?.incentive || 0,
           penalty: existingEntry?.penalty || 0,
           penaltyReason: existingEntry?.penaltyReason || '',
+          withdrawals: existingEntry?.withdrawals || 0,
         };
       });
 
@@ -370,12 +372,16 @@ export default function StaffManagementContent() {
     const captainPayrollRows = captainPayrollEntries.map((entry) => {
       const shiftSalary = entry.shifts * entry.shiftRate;
       const revenueShare = (entry.revenueAmount * entry.revenueSharePercent) / 100;
-      const netSalary = CAPTAIN_BASE_SALARY + shiftSalary + revenueShare + entry.bonus + entry.incentive - entry.penalty;
+      const captainShare = revenueShare * 0.5;
+      const grossSalary = CAPTAIN_BASE_SALARY + shiftSalary + captainShare + entry.bonus + entry.incentive;
+      const netSalary = grossSalary - entry.penalty - entry.withdrawals;
 
       return {
         ...entry,
         shiftSalary,
         revenueShare,
+        captainShare,
+        grossSalary,
         netSalary,
       };
     });
@@ -555,6 +561,7 @@ export default function StaffManagementContent() {
                     incentive: 0,
                     penalty: 0,
                     penaltyReason: '',
+                    withdrawals: 0,
                   },
                 ])
               }
@@ -583,94 +590,164 @@ export default function StaffManagementContent() {
                   </div>
                 </div>
 
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <input
-                    value={entry.phone}
-                    onChange={(e) =>
-                      setCaptainPayrollEntries((prev) =>
-                        prev.map((item) => (item.id === entry.id ? { ...item, phone: e.target.value } : item))
-                      )
-                    }
-                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                    placeholder="Phone number"
-                  />
-                  <input
-                    type="number"
-                    value={entry.shifts}
-                    onChange={(e) =>
-                      setCaptainPayrollEntries((prev) =>
-                        prev.map((item) => (item.id === entry.id ? { ...item, shifts: Number(e.target.value) } : item))
-                      )
-                    }
-                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                    placeholder="Shifts"
-                  />
-                  <input
-                    type="number"
-                    value={entry.shiftRate}
-                    onChange={(e) =>
-                      setCaptainPayrollEntries((prev) =>
-                        prev.map((item) => (item.id === entry.id ? { ...item, shiftRate: Number(e.target.value) } : item))
-                      )
-                    }
-                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                    placeholder="Shift price"
-                  />
-                  <input
-                    type="number"
-                    value={entry.revenueSharePercent}
-                    onChange={(e) =>
-                      setCaptainPayrollEntries((prev) =>
-                        prev.map((item) => (item.id === entry.id ? { ...item, revenueSharePercent: Number(e.target.value) } : item))
-                      )
-                    }
-                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                    placeholder="Revenue %"
-                  />
-                  <input
-                    type="number"
-                    value={entry.revenueAmount}
-                    onChange={(e) =>
-                      setCaptainPayrollEntries((prev) =>
-                        prev.map((item) => (item.id === entry.id ? { ...item, revenueAmount: Number(e.target.value) } : item))
-                      )
-                    }
-                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                    placeholder="Revenue amount"
-                  />
-                  <input
-                    type="number"
-                    value={entry.bonus}
-                    onChange={(e) =>
-                      setCaptainPayrollEntries((prev) =>
-                        prev.map((item) => (item.id === entry.id ? { ...item, bonus: Number(e.target.value) } : item))
-                      )
-                    }
-                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                    placeholder="Bonus"
-                  />
-                  <input
-                    type="number"
-                    value={entry.incentive}
-                    onChange={(e) =>
-                      setCaptainPayrollEntries((prev) =>
-                        prev.map((item) => (item.id === entry.id ? { ...item, incentive: Number(e.target.value) } : item))
-                      )
-                    }
-                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                    placeholder="Incentive"
-                  />
-                  <input
-                    type="number"
-                    value={entry.penalty}
-                    onChange={(e) =>
-                      setCaptainPayrollEntries((prev) =>
-                        prev.map((item) => (item.id === entry.id ? { ...item, penalty: Number(e.target.value) } : item))
-                      )
-                    }
-                    className="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
-                    placeholder="Penalty"
-                  />
+                <div className="mt-3 grid gap-3 md:grid-cols-2">
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">رقم الهاتف</label>
+                    <input
+                      value={entry.phone}
+                      onChange={(e) =>
+                        setCaptainPayrollEntries((prev) =>
+                          prev.map((item) => (item.id === entry.id ? { ...item, phone: e.target.value } : item))
+                        )
+                      }
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                      placeholder="أدخل رقم الهاتف"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">عدد الشيفتات</label>
+                    <input
+                      type="number"
+                      value={entry.shifts}
+                      onChange={(e) =>
+                        setCaptainPayrollEntries((prev) =>
+                          prev.map((item) => (item.id === entry.id ? { ...item, shifts: Number(e.target.value) } : item))
+                        )
+                      }
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                      placeholder="أدخل عدد الشيفتات"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">سعر الشيفت</label>
+                    <input
+                      type="number"
+                      value={entry.shiftRate}
+                      onChange={(e) =>
+                        setCaptainPayrollEntries((prev) =>
+                          prev.map((item) => (item.id === entry.id ? { ...item, shiftRate: Number(e.target.value) } : item))
+                        )
+                      }
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                      placeholder="أدخل سعر الشيفت"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">إجمالي شغل الشيفت</label>
+                    <input
+                      value={entry.shiftSalary}
+                      readOnly
+                      className="w-full rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-foreground"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">الحافز</label>
+                    <input
+                      type="number"
+                      value={entry.bonus}
+                      onChange={(e) =>
+                        setCaptainPayrollEntries((prev) =>
+                          prev.map((item) => (item.id === entry.id ? { ...item, bonus: Number(e.target.value) } : item))
+                        )
+                      }
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                      placeholder="أدخل الحافز"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">الإضافي / التحفيز</label>
+                    <input
+                      type="number"
+                      value={entry.incentive}
+                      onChange={(e) =>
+                        setCaptainPayrollEntries((prev) =>
+                          prev.map((item) => (item.id === entry.id ? { ...item, incentive: Number(e.target.value) } : item))
+                        )
+                      }
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                      placeholder="أدخل التحفيز"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">دخل التغذية والبرفيت</label>
+                    <input
+                      type="number"
+                      value={entry.revenueAmount}
+                      onChange={(e) =>
+                        setCaptainPayrollEntries((prev) =>
+                          prev.map((item) => (item.id === entry.id ? { ...item, revenueAmount: Number(e.target.value) } : item))
+                        )
+                      }
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                      placeholder="أدخل مبلغ التغذية/البرفيت"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">النسبة المئوية</label>
+                    <input
+                      type="number"
+                      value={entry.revenueSharePercent}
+                      onChange={(e) =>
+                        setCaptainPayrollEntries((prev) =>
+                          prev.map((item) => (item.id === entry.id ? { ...item, revenueSharePercent: Number(e.target.value) } : item))
+                        )
+                      }
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                      placeholder="أدخل النسبة"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">إجمالي الحوافز</label>
+                    <input
+                      value={entry.bonus + entry.incentive}
+                      readOnly
+                      className="w-full rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-foreground"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">مشاركة الكابتن من التغذية/البرفيت (50%)</label>
+                    <input
+                      value={entry.revenueShare * 0.5}
+                      readOnly
+                      className="w-full rounded-lg border border-border bg-muted/50 px-3 py-2 text-sm text-foreground"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">المسحوبات</label>
+                    <input
+                      type="number"
+                      value={entry.withdrawals}
+                      onChange={(e) =>
+                        setCaptainPayrollEntries((prev) =>
+                          prev.map((item) => (item.id === entry.id ? { ...item, withdrawals: Number(e.target.value) } : item))
+                        )
+                      }
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                      placeholder="أدخل المسحوبات"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">الباقي بعد المسحوبات</label>
+                    <input
+                      value={entry.netSalary}
+                      readOnly
+                      className="w-full rounded-lg border border-border bg-primary/10 px-3 py-2 text-sm font-700 text-primary"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-600 uppercase tracking-wide text-muted-foreground">الخصم / الغرامة</label>
+                    <input
+                      type="number"
+                      value={entry.penalty}
+                      onChange={(e) =>
+                        setCaptainPayrollEntries((prev) =>
+                          prev.map((item) => (item.id === entry.id ? { ...item, penalty: Number(e.target.value) } : item))
+                        )
+                      }
+                      className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
+                      placeholder="أدخل الخصم"
+                    />
+                  </div>
                 </div>
 
                 <textarea
@@ -686,9 +763,9 @@ export default function StaffManagementContent() {
                 />
 
                 <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  <span>Base: {new Intl.NumberFormat('en-EG').format(CAPTAIN_BASE_SALARY)} EGP</span>
-                  <span>Shift pay: {new Intl.NumberFormat('en-EG').format(entry.shiftSalary)} EGP</span>
-                  <span>Revenue share: {new Intl.NumberFormat('en-EG').format(entry.revenueShare)} EGP</span>
+                  <span>الأساس: {new Intl.NumberFormat('en-EG').format(CAPTAIN_BASE_SALARY)} EGP</span>
+                  <span>أجر الشيفت: {new Intl.NumberFormat('en-EG').format(entry.shiftSalary)} EGP</span>
+                  <span>مشاركة التغذية/البرفيت: {new Intl.NumberFormat('en-EG').format(entry.captainShare)} EGP</span>
                 </div>
               </div>
             ))}
