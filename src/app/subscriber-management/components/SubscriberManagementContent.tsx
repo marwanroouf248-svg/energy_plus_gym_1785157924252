@@ -36,6 +36,9 @@ export interface Subscriber {
 const PACKAGES: PackageType[] = ['Monthly', 'Quarterly', '6-Month', 'Annual', 'Student'];
 const ITEMS_PER_PAGE_OPTIONS = [10, 20, 50];
 
+// Change this icon name to update the Register Subscriber button icon globally.
+const REGISTER_SUBSCRIBER_ICON = 'UserPlusIcon';
+
 function dbRowToSubscriber(row: any): Subscriber {
   return {
     id: row.id,
@@ -333,7 +336,7 @@ export default function SubscriberManagementContent() {
             onClick={() => setRegisterOpen(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-600 hover:bg-primary/90 active:scale-95 transition-all duration-150"
           >
-            <Icon name="UserPlusIcon" size={16} />
+            <Icon name={REGISTER_SUBSCRIBER_ICON} size={16} />
             Register Subscriber
           </button>
         </div>
@@ -450,7 +453,7 @@ export default function SubscriberManagementContent() {
                           onClick={() => setRegisterOpen(true)}
                           className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-xl text-sm font-600 hover:bg-primary/90 transition-all duration-150"
                         >
-                          <Icon name="UserPlusIcon" size={14} />
+                          <Icon name={REGISTER_SUBSCRIBER_ICON} size={14} />
                           Register Subscriber
                         </button>
                       </div>

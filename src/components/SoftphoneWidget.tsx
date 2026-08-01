@@ -145,8 +145,7 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
           assignedTo: contact.assignedTo || '',
           assignedUserId: contact.assignedUserId || null,
           webhookBaseUrl: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1/twilio-call`,
-          // Force demo/simulation mode so calls can be initiated without a Twilio account
-          demo: true,
+          demo: demoMode,
         },
       });
 

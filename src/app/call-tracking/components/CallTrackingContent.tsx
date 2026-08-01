@@ -322,6 +322,17 @@ export default function CallTrackingContent() {
 
     if (editingCall) {
       await supabase.from('call_logs').update(dbRow).eq('id', editingCall.id);
+    } else if (form.callSid) {
+      const { data: updatedData, error: updateError } = await supabase
+        .from('call_logs')
+        .update(dbRow)
+        .eq('call_sid', form.callSid);
+
+      if (updateError) {
+        console.error('Failed to update call log by callSid:', updateError);
+      } else if (!updatedData || updatedData.length === 0) {
+        await supabase.from('call_logs').insert(dbRow);
+      }
     } else {
       await supabase.from('call_logs').insert(dbRow);
     }
