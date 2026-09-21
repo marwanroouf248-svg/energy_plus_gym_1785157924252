@@ -70,7 +70,7 @@ export default function SalesWorkQueuePage(){
     const supabase=createClient();
     const now=new Date().toISOString();
     const update:any={last_contacted_at:now,last_outcome:outcome,notes, next_follow_up_at:followUp?new Date(followUp).toISOString():null};
-    if(outcome==='tour'||outcome==='appointment') { update.tour_status='scheduled'; update.next_action='tour'; }
+    if(outcome==='tour'||outcome==='appointment') { update.tour_status='scheduled'; update.next_action=outcome; }
     else if(outcome==='joined') { update.status='converted'; update.joined_at=now; update.next_action='joined'; }
     else if(outcome==='interested') { update.status='interested'; update.next_action='follow_up'; }
     else if(outcome==='not_interested'||outcome==='do_not_call') { update.status=outcome==='not_interested'?'not_interested':'lost'; }
@@ -79,7 +79,25 @@ export default function SalesWorkQueuePage(){
     const {error:e1}=await supabase.from('call_logs').insert({lead_id:selected.id,agent_id:user.id,assigned_user_id:user.id,contact_name:selected.name,contact_phone:selected.phone,direction:'outbound',call_status:'completed',outcome,notes,assigned_to:selected.assigned_to||''});
     if(e1){toast.error(e1.message);setSaving(false);return;}
     const {error:e2}=await supabase.from('leads').update(update).eq('id',selected.id).eq('user_id',user.id);
-    if(e2) toast.error(e2.message); else {toast.success('تم تسجيل المكالمة وتحديث الليد');setSelected(null);await load();}
+    if(e2) { toast.error(e2.message); setSaving(false); return; }
+
+    if((outcome==='tour'||outcome==='appointment') && followUp){
+      const {error:e3}=await supabase.from('sales_appointments').insert({
+        lead_id:selected.id,
+        sales_user_id:user.id,
+        appointment_at:new Date(followUp).toISOString(),
+        appointment_type:outcome,
+        status:'scheduled',
+        notes
+      });
+      if(e3){ toast.error(e3.message); setSaving(false); return; }
+      if(outcome==='tour'){
+        await supabase.from('leads').update({tour_at:new Date(followUp).toISOString(),tour_status:'scheduled',next_action:'tour'}).eq('id',selected.id).eq('user_id',user.id);
+      }
+    }
+
+    toast.success('تم تسجيل المكالمة وتحديث الليد');
+    setSelected(null); await load();
     setSaving(false);
   };
 
