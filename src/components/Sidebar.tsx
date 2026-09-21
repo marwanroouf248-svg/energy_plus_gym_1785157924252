@@ -21,6 +21,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Subscribers', href: '/subscriber-management', icon: 'UsersIcon', roles: ['admin', 'branch_manager', 'sales_staff'] },
   { label: 'Leads', href: '/leads', icon: 'UserPlusIcon', badge: 7, roles: ['admin', 'sales_staff'] },
   { label: 'Sales Work Queue', href: '/sales-work-queue', icon: 'PhoneIcon', roles: ['admin', 'sales_staff'] },
+  { label: 'Lead Import', href: '/lead-import', icon: 'ArrowUpTrayIcon', roles: ['admin'] },
   { label: 'Sales Team Performance', href: '/sales-team-performance', icon: 'TrophyIcon', roles: ['admin', 'branch_manager'] },
   { label: 'Call Tracking', href: '/call-tracking', icon: 'PhoneIcon', roles: ['admin', 'branch_manager', 'sales_staff'] },
   { label: 'Packages', href: '/packages', icon: 'TagIcon', roles: ['admin'] },
