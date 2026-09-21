@@ -54,9 +54,14 @@ export default function LoginForm() {
     }
     setIsLoading(true);
     try {
-      await signUp(data.email, data.password, { fullName: data.fullName });
-      toast.success('Account created! Welcome to Energy Plus.');
-      router.push('/');
+      const result = await signUp(data.email, data.password, { fullName: data.fullName });
+      if (result?.session) {
+        toast.success('Account created! Welcome to Energy Plus.');
+        router.push('/');
+      } else {
+        toast.success('Account created. Check your email to confirm your account, then sign in.');
+        setMode('login');
+      }
     } catch (error: any) {
       signUpForm.setError('email', {
         type: 'manual',
