@@ -21,10 +21,11 @@ export default function LoginForm({ mode = 'employee' }: { mode?: 'employee' | '
     try {
       const code = data.identifier.trim().toUpperCase();
       const email = mode === 'employee' ? employeeEmail(code) : `${code.toLowerCase()}@manager.energyplus.local`;
-      await signIn(email, data.password || code);
-      const profile = await getUserProfile();
-      if (profile?.is_active === false) { await signOut(); throw new Error('This account is inactive. Please contact the manager.'); }
-      if (mode === 'manager' && !['admin','super_admin','administrator','branch_manager'].includes(profile?.role)) {
+      const authData = await signIn(email, data.password || code);
+      const profile = await getUserProfile(authData?.user?.id);
+      if (!profile) throw new Error('Manager profile was not found. Please contact the manager.');
+      if (profile.is_active === false) { await signOut(); throw new Error('This account is inactive. Please contact the manager.'); }
+      if (mode === 'manager' && !['admin','super_admin','administrator','branch_manager'].includes(profile.role)) {
         await signOut(); throw new Error('This account does not have manager access.');
       }
       toast.success(mode === 'employee' ? 'Employee login successful' : 'Manager login successful');
