@@ -12,6 +12,7 @@ type StaffRole = 'sales_staff' | 'branch_manager';
 interface StaffMember {
   id: string;
   email: string;
+  employeeCode: string;
   fullName: string;
   role: StaffRole;
   branch: string;
@@ -20,8 +21,8 @@ interface StaffMember {
 }
 
 interface StaffFormData {
-  email: string;
-  password: string;
+  employeeCode: string;
+  pin: string;
   fullName: string;
   role: StaffRole;
   branch: string;
@@ -84,8 +85,8 @@ const ROLE_LABELS: Record<StaffRole, string> = {
 };
 
 const EMPTY_FORM: StaffFormData = {
-  email: '',
-  password: '',
+  employeeCode: '',
+  pin: '',
   fullName: '',
   role: 'sales_staff',
   branch: '',
@@ -187,6 +188,7 @@ export default function StaffManagementContent() {
         (data || []).map((row: any) => ({
           id: row.id,
           email: row.email,
+          employeeCode: row.employee_code || '',
           fullName: row.full_name,
           role: row.role as StaffRole,
           branch: row.branch || '',
@@ -325,10 +327,10 @@ export default function StaffManagementContent() {
   const validateForm = (): boolean => {
     const errs: Partial<StaffFormData> = {};
     if (!form.fullName.trim()) errs.fullName = 'Full name is required';
-    if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
-      errs.email = 'Valid email is required';
-    if (!editingId && form.password.length < 8)
-      errs.password = 'Password must be at least 8 characters';
+    if (!editingId && !/^[A-Za-z0-9_-]{4,20}$/.test(form.employeeCode.trim()))
+      errs.employeeCode = 'Code must be 4-20 letters, numbers, _ or -';
+    if (!editingId && !/^\d{6,8}$/.test(form.pin))
+      errs.pin = 'PIN must be 6-8 digits';
     if (!form.branch) errs.branch = 'Branch is required';
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
@@ -344,8 +346,8 @@ export default function StaffManagementContent() {
   const openEdit = (member: StaffMember) => {
     setEditingId(member.id);
     setForm({
-      email: member.email,
-      password: '',
+      employeeCode: member.employeeCode,
+      pin: '',
       fullName: member.fullName,
       role: member.role,
       branch: member.branch,
@@ -375,34 +377,13 @@ export default function StaffManagementContent() {
           .eq('id', editingId);
         if (updateError) throw updateError;
       } else {
-        // Create new auth user via admin API — use service role or edge function
-        // Since we're client-side, we create the profile after signUp
-        // We use Supabase admin signUp with metadata
-        const { data: signUpData, error: signUpError } = await supabase.auth.admin.createUser({
-          email: form.email,
-          password: form.password,
-          email_confirm: true,
-          user_metadata: {
-            full_name: form.fullName,
-            role: form.role,
-            branch: form.branch,
-          },
+        const { error: rpcError } = await supabase.rpc('create_employee_account', {
+          p_full_name: form.fullName,
+          p_employee_code: form.employeeCode,
+          p_pin: form.pin,
+          p_branch: form.branch,
         });
-
-        if (signUpError) throw signUpError;
-
-        // Upsert profile in case trigger didn't fire
-        if (signUpData?.user) {
-          const { error: profileError } = await supabase.from('user_profiles').upsert({
-            id: signUpData.user.id,
-            email: form.email,
-            full_name: form.fullName,
-            role: form.role,
-            branch: form.branch,
-            is_active: form.isActive,
-          });
-          if (profileError) throw profileError;
-        }
+        if (rpcError) throw rpcError;
       }
 
       setModalOpen(false);
@@ -1282,7 +1263,7 @@ export default function StaffManagementContent() {
               <thead>
                 <tr className="border-b border-border bg-muted/40">
                   <th className="text-left px-4 py-3 font-600 text-muted-foreground">Name</th>
-                  <th className="text-left px-4 py-3 font-600 text-muted-foreground">Email</th>
+                  <th className="text-left px-4 py-3 font-600 text-muted-foreground">Employee Code</th>
                   <th className="text-left px-4 py-3 font-600 text-muted-foreground">Role</th>
                   <th className="text-left px-4 py-3 font-600 text-muted-foreground">Branch</th>
                   <th className="text-left px-4 py-3 font-600 text-muted-foreground">Status</th>
@@ -1316,7 +1297,7 @@ export default function StaffManagementContent() {
                           <span className="font-500 text-foreground">{member.fullName}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{member.email}</td>
+                      <td className="px-4 py-3 font-600 text-primary">{member.employeeCode || '—'}</td>
                       <td className="px-4 py-3">
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-600 ${
@@ -1401,36 +1382,35 @@ export default function StaffManagementContent() {
             )}
           </div>
 
-          {/* Email */}
-          <div>
-            <label className="block text-xs font-600 text-foreground mb-1.5">Email Address *</label>
-            <input
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-              placeholder="staff@energyplus.io"
-              disabled={!!editingId}
-              className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-            {formErrors.email && (
-              <p className="text-xs text-negative mt-1">{formErrors.email}</p>
-            )}
-          </div>
-
-          {/* Password (create only) */}
+          {/* Employee Code */}
           {!editingId && (
             <div>
-              <label className="block text-xs font-600 text-foreground mb-1.5">Password *</label>
+              <label className="block text-xs font-600 text-foreground mb-1.5">Employee Code *</label>
               <input
-                type="password"
-                value={form.password}
-                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
-                placeholder="Min. 8 characters"
+                type="text"
+                value={form.employeeCode}
+                onChange={(e) => setForm((f) => ({ ...f, employeeCode: e.target.value.toUpperCase() }))}
+                placeholder="e.g. EP-1027"
                 className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
-              {formErrors.password && (
-                <p className="text-xs text-negative mt-1">{formErrors.password}</p>
-              )}
+              {formErrors.employeeCode && <p className="text-xs text-negative mt-1">{formErrors.employeeCode}</p>}
+            </div>
+          )}
+
+          {/* PIN */}
+          {!editingId && (
+            <div>
+              <label className="block text-xs font-600 text-foreground mb-1.5">Employee PIN *</label>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={8}
+                value={form.pin}
+                onChange={(e) => setForm((f) => ({ ...f, pin: e.target.value.replace(/\D/g, '').slice(0,8) }))}
+                placeholder="6-8 digits"
+                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              {formErrors.pin && <p className="text-xs text-negative mt-1">{formErrors.pin}</p>}
             </div>
           )}
 
