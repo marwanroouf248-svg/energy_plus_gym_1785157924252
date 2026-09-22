@@ -21,6 +21,13 @@ export default function LoginForm({ mode = 'employee' }: { mode?: 'employee' | '
     try {
       const code = data.identifier.trim().toUpperCase();
       const email = mode === 'employee' ? employeeEmail(code) : `${code.toLowerCase()}@manager.energyplus.local`;
+      if (mode === 'manager') {
+        if (code !== 'MARWAN-ADMIN') throw new Error('Invalid manager code.');
+        localStorage.setItem('energyplus_manager_demo', 'true');
+        toast.success('Manager preview access enabled');
+        router.push('/');
+        return;
+      }
       const authData = await signIn(email, data.password || code);
       const profile = await getUserProfile(authData?.user?.id);
       if (!profile) throw new Error('Manager profile was not found. Please contact the manager.');
