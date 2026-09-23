@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Device, Call } from '@twilio/voice-sdk';
 import Icon from '@/components/ui/AppIcon';
 import { createClient } from '@/lib/supabase/client';
 
@@ -51,25 +50,14 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
   const [callSid, setCallSid] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [notes, setNotes] = useState('');
-  const [muted, setMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [micReady, setMicReady] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedAtRef = useRef<number | null>(null);
-  const callRef = useRef<Call | null>(null);
-  const deviceRef = useRef<Device | null>(null);
   const elapsedRef = useRef(0);
-  const isMounted = useRef(true);
   const supabase = createClient();
 
-  useEffect(() => {
-    isMounted.current = true;
-    return () => {
-      isMounted.current = false;
-      if (timerRef.current) clearInterval(timerRef.current);
-      try { callRef.current?.disconnect(); } catch {}
-      try { deviceRef.current?.destroy(); } catch {}
-    };
+  useEffect(() => () => {
+    if (timerRef.current) clearInterval(timerRef.current);
   }, []);
 
   const startTimer = () => {
@@ -89,22 +77,9 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
     }
   };
 
-  const getToken = async () => {
-    const identity = `energyplus-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const demo = typeof window !== 'undefined' && localStorage.getItem('energyplus_manager_demo') === 'true';
-    const { data, error: fnError } = await supabase.functions.invoke('twilio-call/browser-token', {
-      body: { identity },
-      headers: demo ? { 'x-manager-demo': 'true' } : undefined,
-    });
-    if (fnError) throw new Error(fnError.message || 'Could not create browser calling token.');
-    if (!data?.success || !data?.token) throw new Error(data?.error || 'Browser calling is not configured.');
-    return data.token as string;
-  };
-
   const initiateCall = async () => {
     if (!contact) return;
     setError(null);
-    setCallState('initiating');
     setElapsed(0);
     elapsedRef.current = 0;
     stopTimer();
@@ -113,112 +88,68 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
       const destination = normalizeEgyptianPhone(contact.phone);
       if (!destination) throw new Error('Invalid customer phone number.');
 
-      if (!navigator.mediaDevices?.getUserMedia) throw new Error('This browser does not support microphone calling.');
-      await navigator.mediaDevices.getUserMedia({ audio: true });
-      setMicReady(true);
+      // Free mode: use the employee's normal phone dialer.
+      // The CRM logs the call without Twilio or any paid telephony service.
+      const localCallId = `LOCAL-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      setCallSid(localCallId);
 
-      const token = await getToken();
-      const device = new Device(token, { logLevel: 1 });
-      deviceRef.current = device;
-
-      device.on('error', (deviceError) => {
-        if (!isMounted.current) return;
-        setCallState('failed');
-        setError(deviceError.message || 'Browser calling connection failed.');
-        stopTimer();
+      const { error: logError } = await supabase.from('call_logs').insert({
+        lead_id: contact.leadId || null,
+        agent_id: contact.agentId || contact.assignedUserId || null,
+        contact_name: contact.name || destination,
+        contact_phone: contact.phone,
+        contact_type: contact.type || 'lead',
+        direction: 'outbound',
+        call_sid: localCallId,
+        call_status: 'initiated',
+        call_duration: 0,
+        assigned_to: contact.assignedTo || '',
+        assigned_user_id: contact.assignedUserId || null,
       });
+      if (logError) throw new Error(logError.message);
 
-      device.on('tokenWillExpire', async () => {
-        try {
-          const nextToken = await getToken();
-          device.updateToken(nextToken);
-        } catch {}
-      });
-
-      const call = await device.connect({ params: { To: destination } });
-      callRef.current = call;
-      const sid = call.parameters?.CallSid || null;
-      setCallSid(sid);
       setCallState('ringing');
-
-      if (sid) {
-        await supabase.from('call_logs').upsert({
-          lead_id: contact.leadId || null,
-          agent_id: contact.agentId || contact.assignedUserId || null,
-          contact_name: contact.name || destination,
-          contact_phone: contact.phone,
-          contact_type: contact.type || 'lead',
-          direction: 'outbound',
-          call_sid: sid,
-          call_status: 'ringing',
-          assigned_to: contact.assignedTo || '',
-          assigned_user_id: contact.assignedUserId || null,
-        }, { onConflict: 'call_sid' });
-      }
-
-      call.on('ringing', () => {
-        if (isMounted.current) setCallState('ringing');
-      });
-
-      call.on('accept', async () => {
-        if (!isMounted.current) return;
-        setCallState('in-progress');
-        startTimer();
-        if (sid) await supabase.from('call_logs').update({ call_status: 'in-progress' }).eq('call_sid', sid);
-      });
-
-      call.on('disconnect', async () => {
-        stopTimer();
-        if (!isMounted.current) return;
-        const finalSeconds = elapsedRef.current;
-        if (sid) {
-          await supabase.from('call_logs').update({
-            call_status: 'completed',
-            call_duration: finalSeconds,
-            updated_at: new Date().toISOString(),
-          }).eq('call_sid', sid);
-        }
-        setCallState('ended');
-      });
-
-      call.on('cancel', async () => {
-        stopTimer();
-        if (sid) await supabase.from('call_logs').update({ call_status: 'canceled' }).eq('call_sid', sid);
-        if (isMounted.current) setCallState('failed');
-      });
-
-      call.on('reject', async () => {
-        stopTimer();
-        if (sid) await supabase.from('call_logs').update({ call_status: 'failed' }).eq('call_sid', sid);
-        if (isMounted.current) setCallState('failed');
-      });
-
-      call.on('error', (callError) => {
-        stopTimer();
-        if (isMounted.current) {
-          setCallState('failed');
-          setError(callError.message || 'Call failed.');
-        }
-      });
+      window.location.href = `tel:${destination}`;
     } catch (e) {
-      stopTimer();
-      if (isMounted.current) {
-        setCallState('failed');
-        setError(e instanceof Error ? e.message : 'Could not start the browser call.');
-      }
+      setCallState('failed');
+      setError(e instanceof Error ? e.message : 'Could not start the call.');
     }
   };
 
-  const endCall = () => {
-    stopTimer();
-    try { callRef.current?.disconnect(); } catch {}
-    if (isMounted.current && callState !== 'ended') setCallState('ended');
+  const markAnswered = async () => {
+    setCallState('in-progress');
+    startTimer();
+    if (callSid) {
+      await supabase.from('call_logs').update({
+        call_status: 'in-progress',
+        updated_at: new Date().toISOString(),
+      }).eq('call_sid', callSid);
+    }
   };
 
-  const toggleMute = () => {
-    const next = !muted;
-    try { callRef.current?.mute(next); } catch {}
-    setMuted(next);
+  const endCall = async () => {
+    stopTimer();
+    const finalSeconds = elapsedRef.current;
+    if (callSid) {
+      await supabase.from('call_logs').update({
+        call_status: 'completed',
+        call_duration: finalSeconds,
+        updated_at: new Date().toISOString(),
+      }).eq('call_sid', callSid);
+    }
+    setCallState('ended');
+  };
+
+  const markNoAnswer = async () => {
+    stopTimer();
+    if (callSid) {
+      await supabase.from('call_logs').update({
+        call_status: 'no-answer',
+        call_duration: 0,
+        updated_at: new Date().toISOString(),
+      }).eq('call_sid', callSid);
+    }
+    setCallState('failed');
   };
 
   const handleDone = async () => {
@@ -240,8 +171,6 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
 
   const handleClose = () => {
     stopTimer();
-    try { callRef.current?.disconnect(); } catch {}
-    try { deviceRef.current?.destroy(); } catch {}
     onClose();
   };
 
@@ -249,15 +178,13 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
 
   const isActive = callState === 'in-progress';
   const isRinging = callState === 'ringing';
-  const isInitiating = callState === 'initiating';
   const isEnded = callState === 'ended' || callState === 'failed';
 
-  const statusLabel = callState === 'failed' ? 'Call Failed'
-    : isInitiating ? 'Connecting…'
-    : isRinging ? 'Ringing…'
+  const statusLabel = callState === 'failed' ? 'Call Finished'
+    : isRinging ? 'Phone Call'
     : isActive ? 'Live Call'
     : isEnded ? 'Call Ended'
-    : 'Browser Softphone';
+    : 'Free Calling';
 
   return (
     <div className="fixed bottom-6 right-6 z-50 w-80 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
@@ -297,34 +224,31 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
       <div className="px-4 py-4">
         {callState === 'idle' && (
           <button onClick={initiateCall} className="w-full flex items-center justify-center gap-2 py-3 bg-positive text-white rounded-xl font-600 text-sm">
-            <Icon name="PhoneIcon" size={18} /> Start Real Call
+            <Icon name="PhoneIcon" size={18} /> Call Customer — Free
           </button>
         )}
 
-        {isInitiating && (
-          <div className="flex items-center justify-center gap-2 py-3 bg-muted rounded-xl text-sm text-muted-foreground">
-            <Icon name="PhoneIcon" size={16} className="animate-pulse" /> Connecting browser to phone network…
-          </div>
-        )}
-
         {isRinging && (
-          <div className="flex items-center gap-2">
-            <div className="flex-1 flex items-center justify-center py-3 bg-muted rounded-xl text-sm text-muted-foreground">Ringing customer…</div>
-            <button onClick={endCall} className="w-12 h-12 bg-negative text-white rounded-xl flex items-center justify-center"><Icon name="PhoneXMarkIcon" size={18} /></button>
+          <div className="space-y-3">
+            <div className="px-3 py-2 bg-muted rounded-xl text-xs text-muted-foreground text-center">
+              The phone app is handling the real call.<br />When the customer answers, start the timer.
+            </div>
+            <button onClick={markAnswered} className="w-full py-3 bg-positive text-white rounded-xl font-600 text-sm">
+              Customer Answered — Start Timer
+            </button>
+            <button onClick={markNoAnswer} className="w-full py-2 bg-muted text-foreground rounded-xl text-sm">
+              No Answer / Cancel
+            </button>
           </div>
         )}
 
         {isActive && (
           <div className="space-y-3">
-            <div className="text-center py-1 text-xs text-positive">{micReady ? 'Microphone connected' : 'Microphone not connected'}</div>
-            <div className="flex items-center gap-2">
-              <button onClick={toggleMute} className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-500 ${muted ? 'bg-warning-bg text-warning border border-warning/20' : 'bg-muted text-foreground'}`}>
-                <Icon name="MicrophoneIcon" size={16} /> {muted ? 'Unmute' : 'Mute'}
-              </button>
-              <button onClick={endCall} className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-negative text-white rounded-xl text-sm font-600">
-                <Icon name="PhoneXMarkIcon" size={16} /> End Call
-              </button>
-            </div>
+            <div className="text-center py-2 text-xs text-positive">Live call timer</div>
+            <div className="text-center text-3xl font-700 tabular-nums">{formatDuration(elapsed)}</div>
+            <button onClick={endCall} className="w-full flex items-center justify-center gap-2 py-3 bg-negative text-white rounded-xl text-sm font-600">
+              <Icon name="PhoneXMarkIcon" size={16} /> End & Log Call
+            </button>
           </div>
         )}
 
@@ -332,7 +256,7 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
           <div className="space-y-3">
             <div className="flex items-center gap-2 px-3 py-2 bg-muted rounded-xl">
               <Icon name="CheckCircleIcon" size={16} className="text-positive shrink-0" />
-              <p className="text-xs text-muted-foreground">{callState === 'failed' ? 'Call failed — no fake timer was started.' : `Call ended · ${formatDuration(elapsedRef.current)}`}</p>
+              <p className="text-xs text-muted-foreground">{callState === 'failed' ? 'Call marked as no answer.' : `Call ended · ${formatDuration(elapsedRef.current)}`}</p>
             </div>
             <textarea rows={2} placeholder="Add call notes…" value={notes} onChange={e => setNotes(e.target.value)} className="w-full px-3 py-2 bg-background border border-input rounded-xl text-sm resize-none" />
             <button onClick={handleDone} className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-600">Done — Log This Call</button>
