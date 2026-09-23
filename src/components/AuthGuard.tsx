@@ -1,20 +1,25 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const [managerDemo, setManagerDemo] = useState(false);
 
   useEffect(() => {
-    if (!loading && !user) {
+    setManagerDemo(localStorage.getItem('energyplus_manager_demo') === 'true');
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !user && !managerDemo) {
       router.replace('/sign-up-login-screen');
     }
-  }, [user, loading, router]);
+  }, [user, loading, managerDemo, router]);
 
-  if (loading) {
+  if (loading || (!user && !managerDemo)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -24,8 +29,6 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
-  if (!user) return null;
 
   return <>{children}</>;
 }
