@@ -38,13 +38,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     const managerDemo = localStorage.getItem('energyplus_manager_demo') === 'true';
     const demoUser = {
-      id: 'manager-demo',
+      id: '0063ef29-a0f6-40dc-bc8b-c53f833aa6e1',
       email: 'marwan-admin@manager.energyplus.local',
       user_metadata: { full_name: 'Marwan Roouf' },
       email_confirmed_at: new Date().toISOString(),
     };
     const demoProfile = {
-      id: 'manager-demo',
+      id: '0063ef29-a0f6-40dc-bc8b-c53f833aa6e1',
       email: demoUser.email,
       full_name: 'Marwan Roouf',
       role: 'admin',
