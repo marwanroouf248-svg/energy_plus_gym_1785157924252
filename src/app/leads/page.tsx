@@ -97,12 +97,21 @@ export default function LeadsPage() {
     setLoading(true);
     try {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from('leads')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      setLeads(data || []);
+      const managerDemo = localStorage.getItem('energyplus_manager_demo') === 'true';
+      if (managerDemo) {
+        const { data, error } = await supabase.functions.invoke('demo-manager-leads', {
+          body: { action: 'list', code: 'MARWAN-ADMIN' },
+        });
+        if (error) throw error;
+        setLeads(data?.data || []);
+      } else {
+        const { data, error } = await supabase
+          .from('leads')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (error) throw error;
+        setLeads(data || []);
+      }
     } catch (err: any) {
       toast.error('فشل تحميل الليدز: ' + err.message);
     } finally {
@@ -223,17 +232,30 @@ export default function LeadsPage() {
           user: auditUser,
         });
       } else {
-        const { data: inserted, error } = await supabase.from('leads').insert({ ...form, user_id: ownerId }).select().single();
-        if (error) throw error;
+        let inserted: any = null;
+        if (localStorage.getItem('energyplus_manager_demo') === 'true') {
+          const { data, error } = await supabase.functions.invoke('demo-manager-leads', {
+            body: { action: 'insert', code: 'MARWAN-ADMIN', lead: form },
+          });
+          if (error) throw error;
+          if (data?.error) throw new Error(data.error);
+          inserted = data?.data;
+        } else {
+          const { data, error } = await supabase.from('leads').insert({ ...form, user_id: ownerId }).select().single();
+          if (error) throw error;
+          inserted = data;
+        }
         toast.success('تم إضافة الليد');
-        await logAuditAction({
-          action: 'create',
-          entityType: 'lead',
-          entityId: inserted?.id || '',
-          entityName: form.name,
-          changes: buildChanges(null, form),
-          user: auditUser,
-        });
+        if (!localStorage.getItem('energyplus_manager_demo')) {
+          await logAuditAction({
+            action: 'create',
+            entityType: 'lead',
+            entityId: inserted?.id || '',
+            entityName: form.name,
+            changes: buildChanges(null, form),
+            user: auditUser,
+          });
+        }
       }
       setModalOpen(false);
       fetchLeads();
