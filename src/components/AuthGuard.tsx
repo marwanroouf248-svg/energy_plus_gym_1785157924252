@@ -10,7 +10,11 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const [managerDemo, setManagerDemo] = useState(false);
 
   useEffect(() => {
-    setManagerDemo(localStorage.getItem('energyplus_manager_demo') === 'true');
+    try {
+      setManagerDemo(localStorage.getItem('energyplus_manager_demo') === 'true');
+    } catch {
+      setManagerDemo(false);
+    }
   }, []);
 
   useEffect(() => {
