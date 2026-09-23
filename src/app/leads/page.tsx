@@ -206,7 +206,9 @@ export default function LeadsPage() {
     setSaving(true);
     try {
       const supabase = createClient();
-      const auditUser = getUserAuditInfo(user, null);
+      const managerDemoOwnerId = '0063ef29-a0f6-40dc-bc8b-c53f833aa6e1';
+      const ownerId = user?.id === 'manager-demo' ? managerDemoOwnerId : user?.id;
+      const auditUser = getUserAuditInfo({ ...user, id: ownerId }, null);
       if (editingId) {
         const prevLead = leads.find((l) => l.id === editingId);
         const { error } = await supabase.from('leads').update(form).eq('id', editingId);
@@ -221,7 +223,7 @@ export default function LeadsPage() {
           user: auditUser,
         });
       } else {
-        const { data: inserted, error } = await supabase.from('leads').insert({ ...form, user_id: user?.id }).select().single();
+        const { data: inserted, error } = await supabase.from('leads').insert({ ...form, user_id: ownerId }).select().single();
         if (error) throw error;
         toast.success('تم إضافة الليد');
         await logAuditAction({
@@ -268,13 +270,14 @@ export default function LeadsPage() {
     setConvertLoading(true);
     try {
       const supabase = createClient();
+      const ownerId = user?.id === 'manager-demo' ? '0063ef29-a0f6-40dc-bc8b-c53f833aa6e1' : user?.id;
       const today = new Date().toISOString().split('T')[0];
       const endDate = new Date();
       endDate.setDate(endDate.getDate() + 30);
       const { data: sub, error: subError } = await supabase
         .from('subscribers')
         .insert({
-          user_id: user?.id,
+          user_id: ownerId,
           name: lead.name,
           phone: lead.phone,
           package: lead.interested_package || 'Monthly',
