@@ -62,7 +62,8 @@
     "react-hook-form": "^7.83.0",
     "recharts": "^2.15.2",
     "sonner": "^1.7.4",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "@twilio/voice-sdk": "^2.16.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
