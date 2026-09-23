@@ -36,11 +36,21 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    const managerDemo = localStorage.getItem('energyplus_manager_demo') === 'true';
+    let managerDemo = false;
+    try {
+      managerDemo = localStorage.getItem('energyplus_manager_demo') === 'true';
+    } catch {
+      managerDemo = false;
+    }
+
     const demoUser = {
       id: '0063ef29-a0f6-40dc-bc8b-c53f833aa6e1',
       email: 'marwan-admin@manager.energyplus.local',
-      user_metadata: { full_name: 'Marwan Roouf' },
+      user_metadata: {
+        full_name: 'Marwan Roouf',
+        role: 'admin',
+        branch: 'All Branches',
+      },
       email_confirmed_at: new Date().toISOString(),
     };
     const demoProfile = {
@@ -49,6 +59,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       full_name: 'Marwan Roouf',
       role: 'admin',
       employee_code: 'MARWAN-ADMIN',
+      branch: 'All Branches',
       is_active: true,
     };
 
@@ -61,6 +72,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) fetchProfile(session.user.id);
+      }
+      setLoading(false);
+    }).catch(() => {
+      if (managerDemo) {
+        setSession(null);
+        setUser(demoUser);
+        setUserProfile(demoProfile);
+      } else {
+        setSession(null);
+        setUser(null);
+        setUserProfile(null);
       }
       setLoading(false);
     });
@@ -102,8 +124,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
+    try {
+      await supabase.auth.signOut();
+    } finally {
+      try {
+        localStorage.removeItem('energyplus_manager_demo');
+      } catch {}
+    }
   };
 
   const getCurrentUser = async () => {
