@@ -36,18 +36,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
+    const managerDemo = localStorage.getItem('energyplus_manager_demo') === 'true';
+    const demoUser = {
+      id: 'manager-demo',
+      email: 'marwan-admin@manager.energyplus.local',
+      user_metadata: { full_name: 'Marwan Roouf' },
+      email_confirmed_at: new Date().toISOString(),
+    };
+    const demoProfile = {
+      id: 'manager-demo',
+      email: demoUser.email,
+      full_name: 'Marwan Roouf',
+      role: 'admin',
+      employee_code: 'MARWAN-ADMIN',
+      is_active: true,
+    };
+
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
+      if (managerDemo && !session) {
+        setSession(null);
+        setUser(demoUser);
+        setUserProfile(demoProfile);
+      } else {
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) fetchProfile(session.user.id);
+      }
       setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) fetchProfile(session.user.id);
-      else setUserProfile(null);
+      if (managerDemo && !session) {
+        setSession(null);
+        setUser(demoUser);
+        setUserProfile(demoProfile);
+      } else {
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) fetchProfile(session.user.id);
+        else setUserProfile(null);
+      }
       setLoading(false);
     });
 
