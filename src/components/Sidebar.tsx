@@ -25,6 +25,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Appointments & Tours', href: '/sales-appointments', icon: 'CalendarDaysIcon', roles: ['admin', 'branch_manager', 'sales_staff'] },
   { label: 'Rank-In', href: '/rank-in', icon: 'ArrowPathRoundedSquareIcon', roles: ['admin', 'branch_manager', 'sales_staff'] },
   { label: 'Lead Import', href: '/lead-import', icon: 'ArrowUpTrayIcon', roles: ['admin'] },
+  { label: 'Employees Management', href: '/employees-management', icon: 'UserGroupIcon', roles: ['admin'] },
   { label: 'Sales Team Performance', href: '/sales-team-performance', icon: 'TrophyIcon', roles: ['admin', 'branch_manager'] },
   { label: 'Sales Control Room', href: '/sales-control-room', icon: 'ChartBarIcon', roles: ['admin', 'branch_manager'] },
   { label: 'Sales Reports', href: '/sales-reports', icon: 'DocumentChartBarIcon', roles: ['admin', 'branch_manager'] },
