@@ -22,6 +22,7 @@ export interface CallEndedData {
   durationFormatted: string;
   callSid: string | null;
   notes: string;
+  outcome: string;
 }
 
 interface SoftphoneWidgetProps {
@@ -50,6 +51,7 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
   const [callSid, setCallSid] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [notes, setNotes] = useState('');
+  const [outcome, setOutcome] = useState('');
   const [error, setError] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedAtRef = useRef<number | null>(null);
@@ -116,6 +118,17 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
     }
   };
 
+  const analyzeCall = (seconds: number, result: string, noteText: string) => {
+    let score = 55;
+    if (seconds >= 120) score += 15;
+    else if (seconds >= 60) score += 8;
+    else if (seconds < 20) score -= 25;
+    if (['interested','appointment','tour','joined'].includes(result)) score += 15;
+    if (['not_interested','wrong_number','do_not_call'].includes(result)) score += 5;
+    if (noteText.trim().length >= 20) score += 10;
+    return Math.max(0, Math.min(100, score));
+  };
+
   const markAnswered = async () => {
     setCallState('in-progress');
     startTimer();
@@ -130,10 +143,17 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
   const endCall = async () => {
     stopTimer();
     const finalSeconds = elapsedRef.current;
+    const score = analyzeCall(finalSeconds, outcome, notes);
     if (callSid) {
       await supabase.from('call_logs').update({
         call_status: 'completed',
         call_duration: finalSeconds,
+        outcome: outcome || null,
+        ai_score: score,
+        ai_summary: `${outcome || 'No outcome'} · ${formatDuration(finalSeconds)} · ${notes.trim() || 'No notes'}`,
+        ai_coaching: score >= 80 ? 'Good call. Keep the same structure and move quickly to the next action.' : score >= 60 ? 'Acceptable call. Improve discovery questions and always document the next step.' : 'Needs review: strengthen the opening, ask discovery questions, and finish with a clear next action.',
+        ai_next_action: ['appointment','tour'].includes(outcome) ? 'Confirm appointment/tour and send reminder.' : outcome === 'interested' ? 'Book an appointment or tour within 24 hours.' : 'Set a dated follow-up and record the objection/need.',
+        ai_analyzed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq('call_sid', callSid);
     }
@@ -153,8 +173,8 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
   };
 
   const handleDone = async () => {
-    if (callSid && notes.trim()) {
-      await supabase.from('call_logs').update({ notes: notes.trim() }).eq('call_sid', callSid);
+    if (callSid) {
+      await supabase.from('call_logs').update({ notes: notes.trim(), outcome: outcome || null }).eq('call_sid', callSid);
     }
     if (contact && onCallEnded) {
       onCallEnded({
@@ -163,6 +183,7 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
         durationFormatted: formatDuration(elapsedRef.current),
         callSid,
         notes,
+        outcome,
       });
     }
     onCallLogged?.();
@@ -190,7 +211,7 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
     <div className="fixed bottom-6 right-6 z-50 w-80 bg-card border border-border rounded-2xl shadow-2xl overflow-hidden">
       <div className={`px-4 py-3 flex items-center justify-between ${isActive ? 'bg-positive/10' : isEnded ? 'bg-muted' : 'bg-primary/10'}`}>
         <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-positive animate-pulse' : isRinging || isInitiating ? 'bg-warning animate-pulse' : isEnded ? 'bg-muted-foreground' : 'bg-primary'}`} />
+          <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-positive animate-pulse' : isRinging ? 'bg-warning animate-pulse' : isEnded ? 'bg-muted-foreground' : 'bg-primary'}`} />
           <span className="text-xs font-600 text-foreground uppercase tracking-wide">{statusLabel}</span>
         </div>
         <button onClick={handleClose} className="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted">
@@ -258,6 +279,10 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
               <Icon name="CheckCircleIcon" size={16} className="text-positive shrink-0" />
               <p className="text-xs text-muted-foreground">{callState === 'failed' ? 'Call marked as no answer.' : `Call ended · ${formatDuration(elapsedRef.current)}`}</p>
             </div>
+            <select value={outcome} onChange={e => setOutcome(e.target.value)} className="w-full px-3 py-2 bg-background border border-input rounded-xl text-sm">
+              <option value="">Select call outcome…</option>
+              <option value="interested">Interested</option><option value="appointment">Appointment</option><option value="tour">Tour</option><option value="joined">Joined</option><option value="call_back">Call Back</option><option value="not_interested">Not Interested</option><option value="price_objection">Price Objection</option><option value="timing_objection">Timing Objection</option><option value="no_answer">No Answer</option><option value="wrong_number">Wrong Number</option><option value="do_not_call">Do Not Call</option>
+            </select>
             <textarea rows={2} placeholder="Add call notes…" value={notes} onChange={e => setNotes(e.target.value)} className="w-full px-3 py-2 bg-background border border-input rounded-xl text-sm resize-none" />
             <button onClick={handleDone} className="w-full py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-600">Done — Log This Call</button>
           </div>
