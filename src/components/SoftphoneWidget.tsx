@@ -57,6 +57,19 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
   const startedAtRef = useRef<number | null>(null);
   const elapsedRef = useRef(0);
   const supabase = createClient();
+  const isManagerDemo = typeof window !== 'undefined' && localStorage.getItem('energyplus_manager_demo') === 'true';
+  const demoEndpoint = 'https://kfrshaagrcggcjalsjdu.supabase.co/functions/v1/demo-manager-leads';
+
+  const demoRequest = async (action: string, payload: Record<string, unknown> = {}) => {
+    const response = await fetch(demoEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 'MARWAN-ADMIN', action, ...payload }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Demo manager request failed.');
+    return data;
+  };
 
   useEffect(() => () => {
     if (timerRef.current) clearInterval(timerRef.current);
@@ -95,7 +108,7 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
       const localCallId = `LOCAL-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       setCallSid(localCallId);
 
-      const { error: logError } = await supabase.from('call_logs').insert({
+      const callPayload = {
         lead_id: contact.leadId || null,
         agent_id: contact.agentId || contact.assignedUserId || null,
         contact_name: contact.name || destination,
@@ -107,8 +120,12 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
         call_duration: 0,
         assigned_to: contact.assignedTo || '',
         assigned_user_id: contact.assignedUserId || null,
-      });
-      if (logError) throw new Error(logError.message);
+      };
+      if (isManagerDemo) await demoRequest('insert_call', { call: callPayload });
+      else {
+        const { error: logError } = await supabase.from('call_logs').insert(callPayload);
+        if (logError) throw new Error(logError.message);
+      }
 
       setCallState('ringing');
       window.location.href = `tel:${destination}`;
@@ -133,10 +150,9 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
     setCallState('in-progress');
     startTimer();
     if (callSid) {
-      await supabase.from('call_logs').update({
-        call_status: 'in-progress',
-        updated_at: new Date().toISOString(),
-      }).eq('call_sid', callSid);
+      const updates = { call_status: 'in-progress', updated_at: new Date().toISOString() };
+      if (isManagerDemo) await demoRequest('update_call', { call_sid: callSid, updates });
+      else await supabase.from('call_logs').update(updates).eq('call_sid', callSid);
     }
   };
 
@@ -144,11 +160,9 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
     stopTimer();
     const finalSeconds = elapsedRef.current;
     if (callSid) {
-      await supabase.from('call_logs').update({
-        call_status: 'completed',
-        call_duration: finalSeconds,
-        updated_at: new Date().toISOString(),
-      }).eq('call_sid', callSid);
+      const updates = { call_status: 'completed', call_duration: finalSeconds, updated_at: new Date().toISOString() };
+      if (isManagerDemo) await demoRequest('update_call', { call_sid: callSid, updates });
+      else await supabase.from('call_logs').update(updates).eq('call_sid', callSid);
     }
     setCallState('ended');
   };
@@ -156,11 +170,9 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
   const markNoAnswer = async () => {
     stopTimer();
     if (callSid) {
-      await supabase.from('call_logs').update({
-        call_status: 'no-answer',
-        call_duration: 0,
-        updated_at: new Date().toISOString(),
-      }).eq('call_sid', callSid);
+      const updates = { call_status: 'no-answer', call_duration: 0, updated_at: new Date().toISOString() };
+      if (isManagerDemo) await demoRequest('update_call', { call_sid: callSid, updates });
+      else await supabase.from('call_logs').update(updates).eq('call_sid', callSid);
     }
     setCallState('failed');
   };
@@ -168,15 +180,17 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
   const handleDone = async () => {
     if (callSid) {
       const score = analyzeCall(elapsedRef.current, outcome, notes);
-      await supabase.from('call_logs').update({
+      const updates = {
         notes: notes.trim(),
         outcome: outcome || null,
         ai_score: score,
-        ai_summary: `${outcome || 'No outcome'} · ${formatDuration(elapsedRef.current)} · ${notes.trim() || 'No notes'}`,
+        ai_summary: [outcome || 'No outcome', formatDuration(elapsedRef.current), notes.trim() || 'No notes'].join(' · '),
         ai_coaching: score >= 80 ? 'Good call. Keep the same structure and move quickly to the next action.' : score >= 60 ? 'Acceptable call. Improve discovery questions and always document the next step.' : 'Needs review: strengthen the opening, ask discovery questions, and finish with a clear next action.',
         ai_next_action: ['appointment','tour'].includes(outcome) ? 'Confirm appointment/tour and send reminder.' : outcome === 'interested' ? 'Book an appointment or tour within 24 hours.' : 'Set a dated follow-up and record the objection/need.',
         ai_analyzed_at: new Date().toISOString(),
-      }).eq('call_sid', callSid);
+      };
+      if (isManagerDemo) await demoRequest('update_call', { call_sid: callSid, updates });
+      else await supabase.from('call_logs').update(updates).eq('call_sid', callSid);
     }
     if (contact && onCallEnded) {
       onCallEnded({
