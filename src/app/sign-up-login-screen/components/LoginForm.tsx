@@ -50,7 +50,7 @@ export default function LoginForm({ mode = 'employee' }: { mode?: 'employee' | '
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5" noValidate>
       <div>
         <label className="block text-sm font-500 mb-1.5" style={{color:'#8892aa'}}>{mode === 'employee' ? 'Employee Code' : 'Manager Code'}</label>
-        <input type="text" autoComplete="username" placeholder={mode === 'employee' ? 'EP-1027' : 'MARWAN-ADMIN'} {...form.register('identifier',{required:'Code is required',pattern:{value:/^[A-Za-z0-9_-]{4,20}$/,message:'Invalid code'}})} className="w-full px-4 py-3 rounded-xl text-sm focus:outline-none" style={{background:'#161921',border:`1px solid ${form.formState.errors.identifier?'#f43f5e':'#1f2335'}`,color:'#f0f2f8'}} />
+        <input type="text" autoComplete="username" placeholder={mode === 'employee' ? 'EP-1027' : 'Enter manager code'} {...form.register('identifier',{required:'Code is required',pattern:{value:/^[A-Za-z0-9_-]{4,20}$/,message:'Invalid code'}})} className="w-full px-4 py-3 rounded-xl text-sm focus:outline-none" style={{background:'#161921',border:`1px solid ${form.formState.errors.identifier?'#f43f5e':'#1f2335'}`,color:'#f0f2f8'}} />
         {form.formState.errors.identifier && <p className="text-xs mt-1.5" style={{color:'#f43f5e'}}><Icon name="ExclamationCircleIcon" size={12}/> {form.formState.errors.identifier.message}</p>}
       </div>
       {mode === 'employee' && <div>
