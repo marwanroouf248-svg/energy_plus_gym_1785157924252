@@ -143,17 +143,10 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
   const endCall = async () => {
     stopTimer();
     const finalSeconds = elapsedRef.current;
-    const score = analyzeCall(finalSeconds, outcome, notes);
     if (callSid) {
       await supabase.from('call_logs').update({
         call_status: 'completed',
         call_duration: finalSeconds,
-        outcome: outcome || null,
-        ai_score: score,
-        ai_summary: `${outcome || 'No outcome'} · ${formatDuration(finalSeconds)} · ${notes.trim() || 'No notes'}`,
-        ai_coaching: score >= 80 ? 'Good call. Keep the same structure and move quickly to the next action.' : score >= 60 ? 'Acceptable call. Improve discovery questions and always document the next step.' : 'Needs review: strengthen the opening, ask discovery questions, and finish with a clear next action.',
-        ai_next_action: ['appointment','tour'].includes(outcome) ? 'Confirm appointment/tour and send reminder.' : outcome === 'interested' ? 'Book an appointment or tour within 24 hours.' : 'Set a dated follow-up and record the objection/need.',
-        ai_analyzed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       }).eq('call_sid', callSid);
     }
@@ -174,7 +167,16 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
 
   const handleDone = async () => {
     if (callSid) {
-      await supabase.from('call_logs').update({ notes: notes.trim(), outcome: outcome || null }).eq('call_sid', callSid);
+      const score = analyzeCall(elapsedRef.current, outcome, notes);
+      await supabase.from('call_logs').update({
+        notes: notes.trim(),
+        outcome: outcome || null,
+        ai_score: score,
+        ai_summary: `${outcome || 'No outcome'} · ${formatDuration(elapsedRef.current)} · ${notes.trim() || 'No notes'}`,
+        ai_coaching: score >= 80 ? 'Good call. Keep the same structure and move quickly to the next action.' : score >= 60 ? 'Acceptable call. Improve discovery questions and always document the next step.' : 'Needs review: strengthen the opening, ask discovery questions, and finish with a clear next action.',
+        ai_next_action: ['appointment','tour'].includes(outcome) ? 'Confirm appointment/tour and send reminder.' : outcome === 'interested' ? 'Book an appointment or tour within 24 hours.' : 'Set a dated follow-up and record the objection/need.',
+        ai_analyzed_at: new Date().toISOString(),
+      }).eq('call_sid', callSid);
     }
     if (contact && onCallEnded) {
       onCallEnded({
