@@ -124,7 +124,6 @@ export default function CallTrackingContent() {
   const [form, setForm] = useState<Omit<CallLog, 'id'>>(EMPTY_FORM);
   const [softphoneContact, setSoftphoneContact] = useState<CallContact | null>(null);
   const [quickCallOpen, setQuickCallOpen] = useState(false);
-  const [autoStartQuickCall, setAutoStartQuickCall] = useState(false);
   const [quickCallForm, setQuickCallForm] = useState({ name: '', phone: '', type: 'lead' as ContactType });
   const [recordingsModalOpen, setRecordingsModalOpen] = useState(false);
 
@@ -278,7 +277,6 @@ export default function CallTrackingContent() {
       callSid: data.callSid,
     });
     setSoftphoneContact(null);
-    setAutoStartQuickCall(false);
     setModalOpen(true);
   };
 
@@ -350,7 +348,6 @@ export default function CallTrackingContent() {
 
   const handleQuickCall = () => {
     if (!quickCallForm.name || !quickCallForm.phone) return;
-    setAutoStartQuickCall(true);
     setSoftphoneContact({
       name: quickCallForm.name,
       phone: quickCallForm.phone,
@@ -397,7 +394,6 @@ export default function CallTrackingContent() {
           onClose={() => setSoftphoneContact(null)}
           onCallLogged={fetchCalls}
           onCallEnded={handleCallEnded}
-          autoStart={autoStartQuickCall}
         />
       )}
 
@@ -892,14 +888,15 @@ export default function CallTrackingContent() {
             >
               Cancel
             </button>
-            <button
+            <a
+              href={`tel:${quickCallForm.phone.replace(/[^0-9+]/g, '').replace(/^00/, '+').replace(/^0(\d{10})$/, '+20$1')}`}
               onClick={handleQuickCall}
-              disabled={!quickCallForm.name || !quickCallForm.phone}
-              className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-positive text-white rounded-xl text-sm font-600 hover:bg-positive/90 active:scale-95 transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+              aria-disabled={!quickCallForm.name || !quickCallForm.phone}
+              className={`flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-positive text-white rounded-xl text-sm font-600 hover:bg-positive/90 active:scale-95 transition-all duration-150 ${(!quickCallForm.name || !quickCallForm.phone) ? 'opacity-50 pointer-events-none' : ''}`}
             >
               <Icon name="PhoneIcon" size={16} />
               Call Now
-            </button>
+            </a>
           </div>
         </div>
       </Modal>
