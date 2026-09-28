@@ -30,6 +30,7 @@ interface SoftphoneWidgetProps {
   onClose: () => void;
   onCallLogged?: () => void;
   onCallEnded?: (data: CallEndedData) => void;
+  autoStart?: boolean;
 }
 
 function formatDuration(seconds: number) {
@@ -46,7 +47,7 @@ function normalizeEgyptianPhone(phone: string) {
   return value;
 }
 
-export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCallEnded }: SoftphoneWidgetProps) {
+export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCallEnded, autoStart = false }: SoftphoneWidgetProps) {
   const [callState, setCallState] = useState<CallState>('idle');
   const [callSid, setCallSid] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
@@ -148,6 +149,13 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
     dialer.click();
     dialer.remove();
   };
+
+  useEffect(() => {
+    if (autoStart && contact && callState === 'idle') {
+      const timer = window.setTimeout(() => initiateCall(), 0);
+      return () => window.clearTimeout(timer);
+    }
+  }, [autoStart, contact]);
 
   const analyzeCall = (seconds: number, result: string, noteText: string) => {
     let score = 55;
