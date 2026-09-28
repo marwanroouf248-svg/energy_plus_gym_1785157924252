@@ -9,6 +9,8 @@ import { useAuth } from '@/contexts/AuthContext';
 
 interface LoginFormData { identifier: string; password?: string; }
 const employeeEmail = (code: string) => `${code.trim().toLowerCase()}@employee.energyplus.local`;
+const managerEmail = (code: string) => `${code.trim().toLowerCase()}@manager.energyplus.local`;
+const managerRoles = ['admin','super_admin','administrator','branch_manager'];
 
 export default function LoginForm({ mode = 'employee' }: { mode?: 'employee' | 'manager' }) {
   const [isLoading, setIsLoading] = useState(false);
@@ -20,32 +22,46 @@ export default function LoginForm({ mode = 'employee' }: { mode?: 'employee' | '
     setIsLoading(true);
     try {
       const code = data.identifier.trim().toUpperCase();
-      const email = mode === 'employee' ? employeeEmail(code) : `${code.toLowerCase()}@manager.energyplus.local`;
+
       if (mode === 'manager') {
         if (code !== 'MARWAN-ADMIN') throw new Error('Invalid manager code.');
-        localStorage.setItem('energyplus_manager_demo', 'true');
-        toast.success('Manager preview access enabled');
-        router.push('/');
+        const authData = await signIn(managerEmail(code), code);
+        const profile = await getUserProfile(authData?.user?.id);
+        if (!profile) throw new Error('Manager profile was not found. Please contact the manager.');
+        if (profile.is_active === false) {
+          await signOut();
+          throw new Error('This manager account is inactive.');
+        }
+        if (!managerRoles.includes(profile.role)) {
+          await signOut();
+          throw new Error('This account does not have manager access.');
+        }
+        try { localStorage.removeItem('energyplus_manager_demo'); } catch {}
+        toast.success('Manager login successful');
+        router.replace('/');
         return;
       }
-      const authData = await signIn(email, data.password || code);
+
+      const authData = await signIn(employeeEmail(code), data.password || code);
       const profile = await getUserProfile(authData?.user?.id);
-      if (!profile) throw new Error('Manager profile was not found. Please contact the manager.');
-      if (profile.is_active === false) { await signOut(); throw new Error('This account is inactive. Please contact the manager.'); }
-      if (mode === 'manager' && !['admin','super_admin','administrator','branch_manager'].includes(profile.role)) {
-        await signOut(); throw new Error('This account does not have manager access.');
+      if (!profile) throw new Error('Employee profile was not found. Please contact the manager.');
+      if (profile.is_active === false) {
+        await signOut();
+        throw new Error('This account is inactive. Please contact the manager.');
       }
-      toast.success(mode === 'employee' ? 'Employee login successful' : 'Manager login successful');
-      router.push('/');
+      toast.success('Employee login successful');
+      router.replace('/');
     } catch (error: any) {
       form.setError('identifier', { type: 'manual', message: error?.message || 'Invalid credentials. Please try again.' });
-    } finally { setIsLoading(false); }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return <div className="w-full max-w-md">
     <div className="mb-8">
       <h2 className="text-2xl font-700" style={{color:'#f0f2f8'}}>{mode === 'employee' ? 'Employee Login' : 'Manager Login'}</h2>
-      <p className="text-sm mt-1.5" style={{color:'#6b7494'}}>{mode === 'employee' ? 'Enter your employee code and PIN.' : 'Enter the fixed manager access code. No password required.'}</p>
+      <p className="text-sm mt-1.5" style={{color:'#6b7494'}}>{mode === 'employee' ? 'Enter your employee code and PIN.' : 'Enter your fixed manager access code.'}</p>
     </div>
     <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5" noValidate>
       <div>
@@ -66,4 +82,4 @@ export default function LoginForm({ mode = 'employee' }: { mode?: 'employee' | '
       </div>
     </form>
   </div>;
-}
+};
