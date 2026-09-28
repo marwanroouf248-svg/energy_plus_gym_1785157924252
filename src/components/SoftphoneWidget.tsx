@@ -142,20 +142,8 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
       }
     })();
 
-    const dialer = document.createElement('a');
-    dialer.href = `tel:${destination}`;
-    dialer.setAttribute('aria-label', `Call ${contact.name || destination}`);
-    document.body.appendChild(dialer);
-    dialer.click();
-    dialer.remove();
   };
 
-  useEffect(() => {
-    if (autoStart && contact && callState === 'idle') {
-      const timer = window.setTimeout(() => initiateCall(), 0);
-      return () => window.clearTimeout(timer);
-    }
-  }, [autoStart, contact]);
 
   const analyzeCall = (seconds: number, result: string, noteText: string) => {
     let score = 55;
@@ -282,9 +270,14 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
 
       <div className="px-4 py-4">
         {callState === 'idle' && (
-          <button onClick={initiateCall} className="w-full flex items-center justify-center gap-2 py-3 bg-positive text-white rounded-xl font-600 text-sm">
+          <a
+            href={`tel:${normalizeEgyptianPhone(contact.phone)}`}
+            onClick={initiateCall}
+            className="w-full flex items-center justify-center gap-2 py-3 bg-positive text-white rounded-xl font-600 text-sm"
+            aria-label={`Call ${contact.name || normalizeEgyptianPhone(contact.phone)}`}
+          >
             <Icon name="PhoneIcon" size={18} /> Call Customer — Free
-          </button>
+          </a>
         )}
 
         {isRinging && (
