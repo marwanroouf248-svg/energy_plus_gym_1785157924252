@@ -92,47 +92,61 @@ export default function SoftphoneWidget({ contact, onClose, onCallLogged, onCall
     }
   };
 
-  const initiateCall = async () => {
+  const initiateCall = () => {
     if (!contact) return;
+
+    const destination = normalizeEgyptianPhone(contact.phone);
+    if (!destination) {
+      setCallState('failed');
+      setError('Invalid customer phone number.');
+      return;
+    }
+
     setError(null);
     setElapsed(0);
     elapsedRef.current = 0;
     stopTimer();
 
-    try {
-      const destination = normalizeEgyptianPhone(contact.phone);
-      if (!destination) throw new Error('Invalid customer phone number.');
+    // IMPORTANT: launch the native phone dialer directly from the user's
+    // tap. Awaiting Supabase first can break tel: navigation on iPhone/Safari.
+    setCallState('ringing');
+    const localCallId = `LOCAL-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setCallSid(localCallId);
 
-      // Free mode: use the employee's normal phone dialer.
-      // The CRM logs the call without Twilio or any paid telephony service.
-      const localCallId = `LOCAL-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      setCallSid(localCallId);
+    const callPayload = {
+      lead_id: contact.leadId || null,
+      agent_id: contact.agentId || contact.assignedUserId || null,
+      contact_name: contact.name || destination,
+      contact_phone: contact.phone,
+      contact_type: contact.type || 'lead',
+      direction: 'outbound',
+      call_sid: localCallId,
+      call_status: 'initiated',
+      call_duration: 0,
+      assigned_to: contact.assignedTo || '',
+      assigned_user_id: contact.assignedUserId || null,
+    };
 
-      const callPayload = {
-        lead_id: contact.leadId || null,
-        agent_id: contact.agentId || contact.assignedUserId || null,
-        contact_name: contact.name || destination,
-        contact_phone: contact.phone,
-        contact_type: contact.type || 'lead',
-        direction: 'outbound',
-        call_sid: localCallId,
-        call_status: 'initiated',
-        call_duration: 0,
-        assigned_to: contact.assignedTo || '',
-        assigned_user_id: contact.assignedUserId || null,
-      };
-      if (isManagerDemo) await demoRequest('insert_call', { call: callPayload });
-      else {
-        const { error: logError } = await supabase.from('call_logs').insert(callPayload);
-        if (logError) throw new Error(logError.message);
+    // Log in the background; logging must never block the actual phone call.
+    void (async () => {
+      try {
+        if (isManagerDemo) {
+          await demoRequest('insert_call', { call: callPayload });
+        } else {
+          const { error: logError } = await supabase.from('call_logs').insert(callPayload);
+          if (logError) console.error('Call log insert failed:', logError);
+        }
+      } catch (e) {
+        console.error('Call log failed:', e);
       }
+    })();
 
-      setCallState('ringing');
-      window.location.href = `tel:${destination}`;
-    } catch (e) {
-      setCallState('failed');
-      setError(e instanceof Error ? e.message : 'Could not start the call.');
-    }
+    const dialer = document.createElement('a');
+    dialer.href = `tel:${destination}`;
+    dialer.setAttribute('aria-label', `Call ${contact.name || destination}`);
+    document.body.appendChild(dialer);
+    dialer.click();
+    dialer.remove();
   };
 
   const analyzeCall = (seconds: number, result: string, noteText: string) => {
