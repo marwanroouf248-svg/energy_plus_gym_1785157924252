@@ -124,6 +124,7 @@ export default function CallTrackingContent() {
   const [form, setForm] = useState<Omit<CallLog, 'id'>>(EMPTY_FORM);
   const [softphoneContact, setSoftphoneContact] = useState<CallContact | null>(null);
   const [quickCallOpen, setQuickCallOpen] = useState(false);
+  const [autoStartQuickCall, setAutoStartQuickCall] = useState(false);
   const [quickCallForm, setQuickCallForm] = useState({ name: '', phone: '', type: 'lead' as ContactType });
   const [recordingsModalOpen, setRecordingsModalOpen] = useState(false);
 
@@ -277,10 +278,12 @@ export default function CallTrackingContent() {
       callSid: data.callSid,
     });
     setSoftphoneContact(null);
+    setAutoStartQuickCall(false);
     setModalOpen(true);
   };
 
   const startCallForContact = (contact: AssignedContact) => {
+    setAutoStartQuickCall(false);
     setSoftphoneContact({
       name: contact.name,
       phone: contact.phone,
@@ -347,6 +350,7 @@ export default function CallTrackingContent() {
 
   const handleQuickCall = () => {
     if (!quickCallForm.name || !quickCallForm.phone) return;
+    setAutoStartQuickCall(true);
     setSoftphoneContact({
       name: quickCallForm.name,
       phone: quickCallForm.phone,
@@ -393,6 +397,7 @@ export default function CallTrackingContent() {
           onClose={() => setSoftphoneContact(null)}
           onCallLogged={fetchCalls}
           onCallEnded={handleCallEnded}
+          autoStart={autoStartQuickCall}
         />
       )}
 
